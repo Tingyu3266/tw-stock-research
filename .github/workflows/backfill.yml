@@ -1,0 +1,49 @@
+name: 回補歷史資料（手動）
+
+on:
+  workflow_dispatch:
+    inputs:
+      codes:
+        description: "股票代號，逗號分隔；留空＝groups.json 自選清單＋有報告的公司"
+        required: false
+        default: ""
+      days:
+        description: "回補天數"
+        required: false
+        default: "400"
+
+permissions:
+  contents: write
+  actions: write
+
+jobs:
+  backfill:
+    runs-on: ubuntu-latest
+    timeout-minutes: 300
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: 回補
+        env:
+          FINMIND_TOKEN: ${{ secrets.FINMIND_TOKEN }}
+          CODES: ${{ inputs.codes }}
+          DAYS: ${{ inputs.days }}
+        run: |
+          if [ -n "$CODES" ]; then
+            python scripts/backfill.py --codes "$CODES" --days "$DAYS"
+          else
+            python scripts/backfill.py --days "$DAYS"
+          fi
+      - name: 保存
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data/backfill
+          git diff --cached --quiet || git commit -m "回補歷史資料"
+          git push
+      - name: 觸發網站重建
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run daily.yml --ref main || true

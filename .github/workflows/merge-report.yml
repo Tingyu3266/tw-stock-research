@@ -1,0 +1,37 @@
+name: 合併每日報告
+
+# Claude 雲端排程若無法直接推到 main，會推到 claude/daily-report-* 分支；
+# 這裡只把該分支的 reports/ 變更併回 main，再觸發網站更新。
+on:
+  push:
+    branches: ["claude/daily-report-*"]
+
+permissions:
+  contents: write
+  actions: write
+
+jobs:
+  merge:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+      - name: 只合併 reports/
+        env:
+          BRANCH: ${{ github.ref_name }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git fetch origin "$BRANCH"
+          git checkout "origin/$BRANCH" -- reports/
+          git add reports/
+          git diff --cached --quiet && exit 0
+          git commit -m "合併每日報告（$BRANCH）"
+          git push origin main
+          git push origin --delete "$BRANCH" || true
+      - name: 觸發網站更新
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run daily.yml --ref main -f skip_fetch=true || gh workflow run daily.yml --ref main

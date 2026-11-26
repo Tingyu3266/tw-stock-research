@@ -1,0 +1,8 @@
+# build_site.py 產生的網站資料（由 GitHub Actions 每次重建，不進版控）
+site/data/
+site/reports/
+work/
+.claude/
+__pycache__/
+*.pyc
+.env

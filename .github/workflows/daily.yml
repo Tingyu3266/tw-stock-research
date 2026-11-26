@@ -1,0 +1,62 @@
+name: 每日更新資料並發布網站
+
+on:
+  schedule:
+    # GitHub 用 UTC 時間。14:00 UTC = 台灣 22:00（週一～五，融資券此時已公布）
+    - cron: "0 14 * * 1-5"
+    # 週六 10:00 台灣時間：補週五融資券、抓集保股權分散（週五公布）
+    - cron: "0 2 * * 6"
+  workflow_dispatch:           # 可在 GitHub「Actions」頁面手動按 Run
+    inputs:
+      skip_fetch:
+        description: "只重建網站，不抓新資料"
+        type: boolean
+        default: false
+  push:
+    branches: [main]
+    paths: ["reports/**", "groups.json", "site/**", "scripts/build_site.py"]
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+concurrency:
+  group: daily
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deploy.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: 抓取當日公開資料
+        if: github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && !inputs.skip_fetch)
+        run: python scripts/fetch_daily.py
+
+      - name: 整理網站資料
+        run: python scripts/build_site.py
+
+      - name: 保存原始資料到 repo
+        if: github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && !inputs.skip_fetch)
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add data
+          git diff --cached --quiet || git commit -m "資料更新 $(TZ=Asia/Taipei date +%F)"
+          git push
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+      - id: deploy
+        uses: actions/deploy-pages@v4
