@@ -231,42 +231,173 @@ function pageReport(parts) {
 async function renderAnalysis(el, code, d, rid) {
   const reps = S.reports.filter((x) => x.code === code);
   const r = reps.find((x) => x.id === rid) || reps[0];
-  const official = officialCharts(d);
+  const band = bandBox(d);
   if (!r) {
-    el.innerHTML = `${official}<div class="card empty">還沒有這家公司的分析。<br><span class="small">排程每個交易日 20:00 依研究清單寫一家；想優先研究，把代號寫進 <code>analysis_queue.txt</code> 最上面。</span></div>`;
+    el.innerHTML = `<div class="card empty">還沒有這家公司的分析。<br><span class="small">排程每個交易日 20:00 依研究清單寫一家；想優先研究，把代號寫進 <code>analysis_queue.txt</code> 最上面。</span></div>${band}`;
     return;
   }
-  el.innerHTML = `${official}<div class="empty">載入分析…</div>`;
+  el.innerHTML = `<div class="empty">載入分析…</div>`;
   const txt = await fetch(`reports/${encodeURIComponent(r.id)}.md`).then((x) => x.text());
   const body = txt.replace(/^﻿?---[\s\S]*?\n---\s*\n?/, "");
   const html = DOMPurify.sanitize(marked.parse(body));
   const others = reps.filter((x) => x.id !== r.id);
-  el.innerHTML = `${official}
-    <h2>分析：${esc(r.title)}</h2>
+  el.innerHTML = `
+    <h2 style="margin-top:4px">分析：${esc(r.title)}</h2>
     <div class="rep-meta" style="margin:-6px 0 10px"><span class="num">${esc(r.date)}</span>${r.rating ? `<span class="badge ${ratingCls(r.rating)}">${esc(r.rating)}</span>` : ""}
       ${r.tags.map((t) => `<a class="tag" href="#/reports?tags=${encodeURIComponent(t)}">${esc(t)}</a>`).join("")}
       ${others.length ? `<span>・其他日期：${others.map((o) => `<a href="#/stock/${code}?r=${encodeURIComponent(o.id)}">${esc(o.date)}</a>`).join("、")}</span>` : ""}</div>
     ${r.summary ? `<p class="card" style="margin:0 0 14px">${esc(r.summary)}</p>` : ""}
-    <article class="card md" id="md">${html}</article>`;
+    <article class="card md" id="md">${html}</article>
+    ${band}`;
   Charts.hydrate($("#md"));
+}
+
+/* ------------------------------------------------------------ 自動判讀（依官方數據、規則產生，不經 Claude） */
+const sum = (a) => a.reduce((s, v) => s + (v || 0), 0);
+const lotsTxt = (v) => `${v > 0 ? "買超" : v < 0 ? "賣超" : "持平"} ${fint(Math.abs(v))} 張`;
+function streakOf(vals) {
+  let n = 0;
+  for (let i = vals.length - 1; i >= 0; i--) {
+    const v = vals[i];
+    if (!v) break;
+    if (n === 0) n = v > 0 ? 1 : -1;
+    else if ((v > 0) === (n > 0)) n += n > 0 ? 1 : -1;
+    else break;
+  }
+  return n;
+}
+function verdict(score, labels = ["偏空", "中性", "偏多"]) {
+  const k = score >= 2 ? 2 : score <= -2 ? 0 : 1;
+  const cl = ["bear", "neutral", "bull"][k];
+  return `<span class="badge ${cl}" style="font-size:14px">${labels[k]}</span>`;
+}
+
+function chipNarrative(d) {
+  const ch = d.chip.filter((x) => x[1] != null);
+  if (ch.length < 3) return "";
+  const last = ch[ch.length - 1], c5 = ch.slice(-5), c20 = ch.slice(-20);
+  const f5 = sum(c5.map((x) => x[1])), t5 = sum(c5.map((x) => x[2])), d5 = sum(c5.map((x) => x[3]));
+  const f20 = sum(c20.map((x) => x[1])), t20 = sum(c20.map((x) => x[2]));
+  const fS = streakOf(ch.map((x) => x[1])), tS = streakOf(ch.map((x) => x[2]));
+  const k = d.k, kl = k.length;
+  const vol5 = sum(k.slice(-5).map((x) => x[5]));
+  const p5 = kl > 5 ? ((k[kl - 1][4] / k[kl - 6][4]) - 1) * 100 : null;
+  const mb = d.chip.filter((x) => isNum(x[4]));
+  const mb5 = mb.length > 5 ? mb[mb.length - 1][4] - mb[mb.length - 6][4] : null;
+  const ss = d.chip.filter((x) => isNum(x[5]));
+  const ss5 = ss.length > 5 ? ss[ss.length - 1][5] - ss[ss.length - 6][5] : null;
+  const td = d.tdcc, bw = td.length >= 2 ? td[td.length - 1][16] - td[td.length - 2][16] : null;
+
+  const facts = [
+    `<b>${esc(last[0])} 當日</b>：外資${lotsTxt(last[1])}、投信${lotsTxt(last[2])}、自營商${lotsTxt(last[3] || 0)}。`,
+    `<b>近 5 日</b>：外資${lotsTxt(f5)}${fS ? `（連續 ${Math.abs(fS)} 天${fS > 0 ? "買" : "賣"}）` : ""}、投信${lotsTxt(t5)}${tS ? `（連續 ${Math.abs(tS)} 天${tS > 0 ? "買" : "賣"}）` : ""}、自營商${lotsTxt(d5)}；三大法人合計${lotsTxt(f5 + t5 + d5)}，約占同期成交量 ${vol5 ? fmt(Math.abs(f5 + t5 + d5) / vol5 * 100, 1) : "–"}%。`,
+    `<b>近 20 日</b>：外資${lotsTxt(f20)}、投信${lotsTxt(t20)}。`,
+  ];
+  if (mb5 != null) facts.push(`<b>融資</b>：近 5 日${mb5 >= 0 ? "增加" : "減少"} ${fint(Math.abs(mb5))} 張${ss5 != null ? `；<b>融券</b>${ss5 >= 0 ? "增加" : "減少"} ${fint(Math.abs(ss5))} 張` : ""}。`);
+  if (bw != null) facts.push(`<b>千張大戶</b>：持股 ${fmt(td[td.length - 1][16])}%，較前一週 ${signed(bw)} 個百分點。`);
+
+  let score = 0; const why = [];
+  const inst = f5 + t5;
+  if (vol5 && Math.abs(inst) / vol5 > 0.03) { score += inst > 0 ? 1 : -1; why.push(`外資＋投信 5 日${inst > 0 ? "合計買超" : "合計賣超"}，力道約占成交量 ${fmt(Math.abs(inst) / vol5 * 100, 1)}%，${inst > 0 ? "法人資金正在流入" : "法人正在調節"}。`); }
+  else why.push("外資＋投信 5 日買賣超占成交量比例不高，法人沒有明顯方向。");
+  if (f5 && t5 && (f5 > 0) !== (t5 > 0)) why.push(`外資與投信方向相反（外資${f5 > 0 ? "買" : "賣"}、投信${t5 > 0 ? "買" : "賣"}），代表法人看法分歧，${t5 > 0 ? "投信作帳或認養行情需留意持續性" : "外資買盤能否延續是關鍵"}。`);
+  if (Math.abs(fS) >= 3) { score += fS > 0 ? 1 : -1; why.push(`外資已連續 ${Math.abs(fS)} 天${fS > 0 ? "買超，趨勢性買盤" : "賣超，賣壓尚未停止"}。`); }
+  if (Math.abs(tS) >= 3) { score += tS > 0 ? 1 : -1; why.push(`投信連續 ${Math.abs(tS)} 天${tS > 0 ? "買超，常見於投信認養行情" : "賣超"}。`); }
+  if (mb5 != null && p5 != null) {
+    if (mb5 > 0 && inst < 0) { score -= 1; why.push("融資增加但法人賣出，籌碼有從法人流向散戶的跡象，通常較不健康。"); }
+    else if (mb5 < 0 && inst > 0) { score += 1; why.push("融資減少、法人買進，籌碼往法人集中（俗稱「籌碼沉澱」），較為健康。"); }
+  }
+  if (bw != null && Math.abs(bw) >= 0.2) { score += bw > 0 ? 1 : -1; why.push(`千張大戶一週${bw > 0 ? "增加" : "減少"} ${fmt(Math.abs(bw))} 個百分點，${bw > 0 ? "大戶在收集籌碼" : "大戶在釋出持股"}。`); }
+  if (p5 != null) why.push(`同期股價 ${signed(p5, 2, "%")}。${p5 > 0 && inst < 0 ? "股價上漲但法人賣，屬於「量價背離」，要小心追高。" : p5 < 0 && inst > 0 ? "股價下跌但法人逢低買進，可留意是否止跌。" : ""}`);
+
+  return `<div class="card narrative"><h3>籌碼解讀 ${verdict(score)}</h3>
+    <h4>這幾天誰在買賣</h4><ul>${facts.map((f) => `<li>${f}</li>`).join("")}</ul>
+    <h4>分析</h4><ul>${why.map((f) => `<li>${f}</li>`).join("")}</ul>
+    <h4>結論</h4><p>${score >= 2 ? "整體籌碼偏多：法人與大戶站在買方，短線籌碼面支撐較強。" : score <= -2 ? "整體籌碼偏空：法人或大戶持續調節，短線籌碼面壓力較大，宜等賣壓緩和。" : "籌碼面中性：買賣力道沒有明顯一方占優，建議搭配基本面與技術面判斷。"}</p>
+    <p class="muted small">依證交所、櫃買中心、集保公開數據自動判讀（評分 ${score > 0 ? "+" : ""}${score}），每日更新；非投資建議。</p></div>`;
+}
+
+function finNarrative(d) {
+  const rev = d.rev.filter((x) => isNum(x[1]));
+  const eps = d.eps.filter((x) => isNum(x[1]));
+  if (rev.length < 3 && eps.length < 2) return "";
+  const facts = [], why = []; let score = 0;
+  if (rev.length) {
+    const r = rev[rev.length - 1];
+    facts.push(`<b>${esc(r[0])} 月營收</b> ${yi(r[1])} 億元，月增 ${signed(r[2], 1, "%")}、年增 ${signed(r[3], 1, "%")}${isNum(r[4]) ? `，今年累計年增 ${signed(r[4], 1, "%")}` : ""}。`);
+    const y3 = rev.slice(-3).map((x) => x[3]).filter(isNum), y3p = rev.slice(-6, -3).map((x) => x[3]).filter(isNum);
+    const posRun = (() => { let n = 0; for (let i = rev.length - 1; i >= 0 && isNum(rev[i][3]); i--) { if (rev[i][3] > 0) n++; else break; } return n; })();
+    if (y3.length === 3) {
+      const a = sum(y3) / 3, b = y3p.length ? sum(y3p) / y3p.length : null;
+      facts.push(`近 3 個月平均年增 ${signed(a, 1, "%")}${b != null ? `（前 3 個月 ${signed(b, 1, "%")}）` : ""}${posRun ? `，已連續 ${posRun} 個月年增` : ""}。`);
+      if (a > 10) { score += 1; why.push(`營收維持雙位數年增，成長動能明確。`); } else if (a < 0) { score -= 1; why.push("近 3 個月營收平均年減，需求轉弱或基期偏高。"); } else why.push("營收成長溫和，屬於穩定期。");
+      if (b != null) { if (a - b > 5) { score += 1; why.push("年增率比前一季度明顯拉高，成長在加速。"); } else if (b - a > 5) { score -= 1; why.push("年增率比前一季度明顯下滑，成長在放緩。"); } }
+    }
+  }
+  if (eps.length >= 2) {
+    const e = eps[eps.length - 1], prev = eps[eps.length - 2];
+    const [y, q] = [e[0].slice(0, 4), e[0].slice(-1)];
+    const ly = eps.find((x) => x[0] === `${+y - 1}Q${q}`);
+    facts.push(`<b>${esc(e[0])} 單季 EPS</b> ${fmt(e[1])} 元，季增 ${prev[1] ? signed((e[1] / prev[1] - 1) * 100, 1, "%") : "–"}${ly && ly[1] ? `、年增 ${signed((e[1] / ly[1] - 1) * 100, 1, "%")}` : ""}${isNum(e[2]) ? `；今年累計 ${fmt(e[2])} 元` : ""}。`);
+    if (ly && ly[1] > 0) { const g = (e[1] / ly[1] - 1) * 100; if (g > 10) { score += 1; why.push("單季獲利比去年同期成長超過一成，獲利跟上營收。"); } else if (g < -10) { score -= 1; why.push("單季獲利比去年同期衰退超過一成，要注意毛利率或費用是否惡化。"); } }
+  }
+  const b = d.band;
+  if (b && b.pe) {
+    const pos = b.peNow <= b.pe[0] ? "便宜" : b.peNow >= b.pe[2] ? "昂貴" : b.peNow <= b.pe[1] ? "合理偏低" : "合理偏高";
+    facts.push(`<b>評價</b>：本益比 ${fmt(b.peNow)} 倍，近一年區間約 ${fmt(b.pe[0])}～${fmt(b.pe[2])} 倍（中位數 ${fmt(b.pe[1])}）。`);
+    why.push(`以近一年本益比區間來看，目前位於「${pos}」區。`);
+    if (pos === "便宜") score += 1; if (pos === "昂貴") score -= 1;
+  }
+  const lastDiv = d.div[0];
+  if (lastDiv && b && b.close) facts.push(`<b>股利</b>：最近一次現金股利 ${fmt(lastDiv[2])} 元，以目前股價計算殖利率約 ${fmt(lastDiv[2] / b.close * 100)}%（單次配發）。`);
+  return `<div class="card narrative"><h3>財務解讀 ${verdict(score, ["轉弱", "穩定", "成長"])}</h3>
+    <h4>最新財務狀況</h4><ul>${facts.map((f) => `<li>${f}</li>`).join("")}</ul>
+    <h4>分析</h4><ul>${why.map((f) => `<li>${f}</li>`).join("")}</ul>
+    <h4>結論</h4><p>${score >= 2 ? "基本面處於成長期：營收與獲利同步向上，評價若未過熱，屬於體質較佳的狀態。" : score <= -2 ? "基本面轉弱：營收或獲利動能下滑，需等待止穩訊號（例如月營收年增轉正）。" : "基本面穩定：沒有明顯加速或惡化，股價較依賴產業消息與評價變化。"}</p>
+    <p class="muted small">依公開資訊觀測站月營收與季報數據自動判讀，每月／每季更新；非投資建議。</p></div>`;
+}
+
+/* 價位參考：本益比河流＋技術面關鍵價位 */
+function bandBox(d) {
+  const b = d.band;
+  if (!b) return "";
+  const rows = [];
+  let pos = "", gauge = "";
+  if (b.price) {
+    const [lo, mid, hi] = b.price;
+    pos = b.close <= lo ? "便宜區" : b.close >= hi ? "昂貴區" : b.close <= mid ? "合理偏低" : "合理偏高";
+    const min = Math.min(lo * 0.85, b.close), max = Math.max(hi * 1.15, b.close);
+    const x = (v) => ((v - min) / (max - min)) * 100;
+    gauge = `<div class="gauge"><div class="g-z" style="left:0;width:${x(lo)}%;background:var(--down-soft)"></div><div class="g-z" style="left:${x(lo)}%;width:${x(hi) - x(lo)}%;background:var(--neutral-soft)"></div><div class="g-z" style="left:${x(hi)}%;right:0;background:var(--up-soft)"></div>
+      <div class="g-t" style="left:${x(lo)}%">${fmt(lo, 0)}</div><div class="g-t" style="left:${x(mid)}%">${fmt(mid, 0)}</div><div class="g-t" style="left:${x(hi)}%">${fmt(hi, 0)}</div>
+      <div class="g-now" style="left:${x(b.close)}%"><span>現價 ${fmt(b.close, 0)}</span></div></div>
+      <div class="g-leg small"><span>便宜區</span><span>合理區</span><span>昂貴區</span></div>`;
+    rows.push(["便宜價（近一年本益比 20 百分位 × 近四季 EPS）", `${fmt(lo)}（${fmt(b.pe[0])} 倍）`]);
+    rows.push(["合理價（中位數）", `${fmt(mid)}（${fmt(b.pe[1])} 倍）`]);
+    rows.push(["昂貴價（80 百分位）", `${fmt(hi)}（${fmt(b.pe[2])} 倍）`]);
+  }
+  const ma = b.ma || {};
+  [["20", "月線 MA20"], ["60", "季線 MA60"], ["120", "半年線 MA120"], ["240", "年線 MA240"], ["300", "MA300"]].forEach(([k, n]) => { if (ma[k]) rows.push([n, `${fmt(ma[k])}（現價${b.close >= ma[k] ? "在上方" : "在下方"}）`]); });
+  rows.push(["近一年最高／最低", `${fmt(b.hi)}／${fmt(b.lo)}`]);
+  const sup = Object.values(ma).filter((v) => v && v < b.close).sort((a, c) => c - a)[0];
+  const res = Object.values(ma).filter((v) => v && v > b.close).sort((a, c) => a - c)[0];
+  return `<div class="card narrative"><h3>價位參考（系統自動計算）${pos ? ` <span class="badge ${pos === "便宜區" ? "bull" : pos === "昂貴區" ? "bear" : "neutral"}" style="font-size:14px">${pos}</span>` : ""}</h3>
+    ${gauge}
+    <table><tbody>${rows.map(([k, v]) => `<tr><td class="l">${k}</td><td class="num">${v}</td></tr>`).join("")}</tbody></table>
+    <p class="small">${b.price ? `目前股價 ${fmt(b.close)} 位於近一年本益比區間的「${pos}」。` : "近四季 EPS 為負或資料不足，無法用本益比估價。"}${sup ? `下方最近的均線支撐約 ${fmt(sup)}；` : ""}${res ? `上方最近的均線壓力約 ${fmt(res)}。` : ""}</p>
+    <p class="muted small">本益比區間只反映過去一年市場給的評價，產業循環或獲利大幅變動時會失準；買賣理由與詳細推論請看上方分析報告的「買賣評估」。資料日 ${esc(b.date)}，每日更新，非投資建議。</p></div>`;
 }
 
 /* 報告頁上方的官方數據圖（證交所／櫃買中心資料，自動產生） */
 function officialCharts(d) {
   const out = [];
-  const k = d.k.slice(-250);
-  if (k.length > 20) {
-    const monthly = [];
-    k.forEach((x) => { const m = x[0].slice(0, 7); const last = monthly[monthly.length - 1]; if (last && last[0] === m) last[1] = x[4]; else monthly.push([m, x[4]]); });
-    out.push(Charts.render({ type: "line", title: "近一年股價（月底收盤）", unit: "元", labels: monthly.map((x) => x[0].slice(2).replace("-", "/")), values: monthly.map((x) => x[1]), source: `證交所／櫃買中心，至 ${k[k.length - 1][0]}` }));
-  }
   const rev = d.rev.slice(-13);
   if (rev.length > 2) out.push(Charts.render({ type: "bar", title: "月營收", unit: "億元", labels: rev.map((x) => x[0].slice(2).replace("-", "/")), values: rev.map((x) => +((x[1] || 0) / 1e5).toFixed(1)), source: `公開資訊觀測站，至 ${rev[rev.length - 1][0]}` }));
   const yoy = rev.filter((x) => isNum(x[3]));
   if (yoy.length > 2) out.push(Charts.render({ type: "bar", signed: true, title: "月營收年增率", unit: "%", labels: yoy.map((x) => x[0].slice(2).replace("-", "/")), values: yoy.map((x) => +x[3].toFixed(1)), source: "公開資訊觀測站" }));
   const eps = d.eps.filter((x) => isNum(x[1])).slice(-8);
   if (eps.length > 2) out.push(Charts.render({ type: "bar", title: "單季 EPS", unit: "元", labels: eps.map((x) => x[0].slice(2)), values: eps.map((x) => x[1]), source: "公開資訊觀測站（單季＝累計相減）" }));
-  return out.length ? `<h2>官方數據速覽</h2><div class="official">${out.join("")}</div>` : "";
+  return out.length ? `<div class="official">${out.join("")}</div>` : "";
 }
 
 /* ------------------------------------------------------------ 選股篩選 */
@@ -495,21 +626,51 @@ async function pageStock(parts, q) {
 
   function tabK() {
     if (d.k.length < 2) { T().innerHTML = noData("K 線資料不足"); return; }
-    T().innerHTML = `<div class="card"><div class="legend"><span><i style="background:#e0a100"></i>MA5</span><span><i style="background:#7a5af8"></i>MA20</span><span><i style="background:#0ba5ec"></i>MA60</span><span class="muted">紅漲綠跌・成交量單位：張</span></div><div class="chart" id="ck"></div></div>`;
-    const c = mkChart($("#ck"));
+    const MAS = [[5, "MA5", "#e0a100"], [20, "MA20 月線", "#7a5af8"], [60, "MA60 季線", "#0ba5ec"], [120, "MA120 半年線", "#e87ba4"], [300, "MA300", "#1baf7a"]];
+    const maData = MAS.map(([n]) => sma(d.k, n));
+    const maAt = MAS.map((_, i) => Object.fromEntries(maData[i].map((p) => [p.time, p.value])));
+    const idx = Object.fromEntries(d.k.map((x, i) => [x[0], i]));
+    T().innerHTML = `<div class="card">
+      <div class="kinfo" id="kinfo"></div>
+      <div class="legend" id="kma"></div>
+      <div class="chart" id="ck"></div>
+      <div class="vol-head small"><span>成交量（張）</span><b class="num" id="kvol"></b></div>
+      <div class="chart vol" id="cv"></div>
+      <div class="muted small">紅漲綠跌。滑鼠移到 K 棒上可看當天明細，兩張圖會同步捲動。${d.k.length < 300 ? `目前只有 ${d.k.length} 天資料，MA300 需要 300 個交易日才會出現。` : ""}</div></div>`;
     const up = css("--up"), dn = css("--down");
+    const info = (i) => {
+      const x = d.k[i], p = i > 0 ? d.k[i - 1][4] : null;
+      const chg = p ? x[4] - p : null, pct = p ? (chg / p) * 100 : null, amp = p && x[2] != null ? ((x[2] - x[3]) / p) * 100 : null;
+      const col = (v) => (v == null ? "" : v > p ? "up" : v < p ? "down" : "");
+      const cell = (k, v) => `<div><span class="k">${k}</span><span class="v num">${v}</span></div>`;
+      $("#kinfo").innerHTML = `<div class="kdate num">${x[0]}</div>
+        ${cell("開盤", `<span class="${col(x[1])}">${fmt(x[1])}</span>`)}${cell("最高", `<span class="${col(x[2])}">${fmt(x[2])}</span>`)}
+        ${cell("最低", `<span class="${col(x[3])}">${fmt(x[3])}</span>`)}${cell("收盤", `<span class="${col(x[4])}">${fmt(x[4])}</span>`)}
+        ${cell("漲跌", signed(chg))}${cell("幅度", signed(pct, 2, "%"))}${cell("振幅", amp == null ? "–" : fmt(amp) + "%")}
+        ${cell("成交量", fint(x[5]) + " 張")}${cell("昨收", fmt(p))}`;
+      $("#kma").innerHTML = MAS.map(([n, name, c], j) => `<span><i style="background:${c}"></i>${name} <b class="num">${maAt[j][x[0]] != null ? fmt(maAt[j][x[0]]) : "–"}</b></span>`).join("");
+      $("#kvol").textContent = `${x[0]}　${fint(x[5])} 張`;
+    };
+    const c = mkChart($("#ck"), { timeScale: { visible: false, borderColor: css("--line") } });
     const cs = c.addCandlestickSeries({ upColor: up, downColor: dn, borderUpColor: up, borderDownColor: dn, wickUpColor: up, wickDownColor: dn });
     cs.setData(d.k.map((x) => ({ time: x[0], open: x[1] ?? x[4], high: x[2] ?? x[4], low: x[3] ?? x[4], close: x[4] })));
-    const vs = c.addHistogramSeries({ priceScaleId: "vol", priceFormat: { type: "volume" }, lastValueVisible: false, priceLineVisible: false });
-    c.priceScale("vol").applyOptions({ scaleMargins: { top: 0.8, bottom: 0 } });
-    cs.priceScale().applyOptions({ scaleMargins: { top: 0.05, bottom: 0.25 } });
-    vs.setData(d.k.map((x, i) => ({ time: x[0], value: x[5] || 0, color: (i && x[4] < d.k[i - 1][4] ? dn : up) + "66" })));
-    [[5, "#e0a100"], [20, "#7a5af8"], [60, "#0ba5ec"]].forEach(([n, col]) => {
-      const s = sma(d.k, n);
-      if (s.length) c.addLineSeries({ color: col, lineWidth: 1, lastValueVisible: false, priceLineVisible: false, crosshairMarkerVisible: false }).setData(s);
+    MAS.forEach(([, , col], j) => {
+      if (maData[j].length) c.addLineSeries({ color: col, lineWidth: 1, lastValueVisible: false, priceLineVisible: false, crosshairMarkerVisible: false }).setData(maData[j]);
     });
+    // 成交量獨立一張圖，與 K 線同步
+    const v = mkChart($("#cv"));
+    const vs = v.addHistogramSeries({ priceFormat: { type: "volume" }, priceLineVisible: false });
+    vs.setData(d.k.map((x, i) => ({ time: x[0], value: x[5] || 0, color: (i && x[4] < d.k[i - 1][4] ? dn : up) + "aa" })));
+    v.priceScale("right").applyOptions({ scaleMargins: { top: 0.1, bottom: 0 }, minimumWidth: 72 });
+    c.priceScale("right").applyOptions({ minimumWidth: 72 });
+    let syncing = false;
+    const sync = (from, to) => from.timeScale().subscribeVisibleLogicalRangeChange((r) => { if (!r || syncing) return; syncing = true; to.timeScale().setVisibleLogicalRange(r); syncing = false; });
+    sync(c, v); sync(v, c);
     const n = d.k.length;
     c.timeScale().setVisibleLogicalRange({ from: Math.max(0, n - 130), to: n + 2 });
+    info(n - 1);
+    const onMove = (p) => { const i = p && p.time != null ? idx[p.time] : undefined; info(i == null ? n - 1 : i); };
+    c.subscribeCrosshairMove(onMove); v.subscribeCrosshairMove(onMove);
   }
 
   function tabChip() {
@@ -517,10 +678,14 @@ async function pageStock(parts, q) {
     T().innerHTML = `
       <div class="card"><div class="seg" id="who"><button data-i="1" class="on">外資</button><button data-i="2">投信</button><button data-i="3">自營商</button><button data-i="0">三大法人合計</button></div>
         <div class="muted small">每日買賣超（張）</div><div class="chart sm" id="cc"></div></div>
-      <div class="card" style="margin-top:14px"><h3>融資融券餘額（張）</h3><div class="legend"><span><i style="background:${css("--up")}"></i>融資餘額（右軸）</span><span><i style="background:${css("--down")}"></i>融券餘額（左軸）</span></div><div class="chart sm" id="cm"></div></div>
+      <div class="official" style="margin-top:14px">
+        <div class="card"><h3>融資餘額（張）</h3><div class="chart sm" id="cm"></div></div>
+        <div class="card"><h3>融券餘額（張）</h3><div class="chart sm" id="cs2"></div></div>
+      </div>
       <h2>近 20 日明細</h2>
       <div class="tbl-wrap"><table><thead><tr><th class="l">日期</th><th>外資</th><th>投信</th><th>自營商</th><th>合計</th><th>融資餘額</th><th>融券餘額</th></tr></thead>
-      <tbody>${d.chip.slice(-20).reverse().map((x) => `<tr><td class="l num">${x[0]}</td><td>${signed(x[1], 0)}</td><td>${signed(x[2], 0)}</td><td>${signed(x[3], 0)}</td><td>${signed((x[1] || 0) + (x[2] || 0) + (x[3] || 0), 0)}</td><td class="num">${fint(x[4])}</td><td class="num">${fint(x[5])}</td></tr>`).join("")}</tbody></table></div>`;
+      <tbody>${d.chip.slice(-20).reverse().map((x) => `<tr><td class="l num">${x[0]}</td><td>${signed(x[1], 0)}</td><td>${signed(x[2], 0)}</td><td>${signed(x[3], 0)}</td><td>${signed((x[1] || 0) + (x[2] || 0) + (x[3] || 0), 0)}</td><td class="num">${fint(x[4])}</td><td class="num">${fint(x[5])}</td></tr>`).join("")}</tbody></table></div>
+      ${chipNarrative(d, st)}`;
     const c = mkChart($("#cc"));
     const hs = c.addHistogramSeries({ priceLineVisible: false });
     const draw = (i) => {
@@ -529,17 +694,19 @@ async function pageStock(parts, q) {
     };
     draw(1);
     $$("#who button").forEach((b) => b.addEventListener("click", () => { $$("#who button").forEach((x) => x.classList.toggle("on", x === b)); draw(+b.dataset.i); }));
-    const m = mkChart($("#cm"), { leftPriceScale: { visible: true, borderColor: css("--line") } });
-    m.addLineSeries({ color: css("--up"), lineWidth: 2 }).setData(d.chip.filter((x) => isNum(x[4])).map((x) => ({ time: x[0], value: x[4] })));
-    m.addLineSeries({ color: css("--down"), lineWidth: 2, priceScaleId: "left" }).setData(d.chip.filter((x) => isNum(x[5])).map((x) => ({ time: x[0], value: x[5] })));
+    const m = mkChart($("#cm"));
+    m.addLineSeries({ color: css("--s1"), lineWidth: 2 }).setData(d.chip.filter((x) => isNum(x[4])).map((x) => ({ time: x[0], value: x[4] })));
     m.timeScale().fitContent();
+    const m2 = mkChart($("#cs2"));
+    m2.addLineSeries({ color: css("--s2"), lineWidth: 2 }).setData(d.chip.filter((x) => isNum(x[5])).map((x) => ({ time: x[0], value: x[5] })));
+    m2.timeScale().fitContent();
   }
 
   function tabFin() {
     const rev = d.rev, eps = d.eps;
+    const charts = officialCharts(d);
     T().innerHTML = `
-      <div class="card"><h3>月營收（億元）與年增率</h3><div class="legend"><span><i style="background:${css("--accent")}"></i>月營收（右軸）</span><span><i style="background:#e0a100"></i>年增率 %（左軸）</span></div>
-        ${rev.length ? `<div class="chart sm" id="cr"></div>` : noData("尚無月營收")}</div>
+      ${charts || noData("尚無月營收或 EPS 資料")}
       <h2>月營收明細</h2>
       <div class="tbl-wrap"><table><thead><tr><th class="l">年月</th><th>營收(億)</th><th>月增%</th><th>年增%</th><th>累計年增%</th></tr></thead>
         <tbody>${rev.slice(-24).reverse().map((x) => `<tr><td class="l num">${x[0]}</td><td class="num">${yi(x[1])}</td><td>${signed(x[2], 1)}</td><td>${signed(x[3], 1)}</td><td>${signed(x[4], 1)}</td></tr>`).join("")}</tbody></table></div>
@@ -549,13 +716,8 @@ async function pageStock(parts, q) {
       <h2>股利</h2>
       <div class="tbl-wrap"><table><thead><tr><th class="l">股利年度</th><th class="l">期別</th><th>現金股利(元)</th><th>股票股利(元)</th><th class="l">董事會日期</th></tr></thead>
         <tbody>${d.div.map((x) => `<tr><td class="l num">${x[0]}</td><td class="l">${esc(x[1])}</td><td class="num">${fmt(x[2], 4)}</td><td class="num">${fmt(x[3], 4)}</td><td class="l num">${esc(x[4])}</td></tr>`).join("") || `<tr><td colspan="5" class="empty">尚無資料</td></tr>`}</tbody></table></div>
-      <p class="muted small">本益比、股價淨值比、殖利率為交易所每日公布值；官方季報 EPS 為「年度累計」，單季數字由累計相減推得。</p>`;
-    if (rev.length) {
-      const c = mkChart($("#cr"), { leftPriceScale: { visible: true, borderColor: css("--line") } });
-      c.addHistogramSeries({ color: css("--accent"), priceLineVisible: false }).setData(rev.map((x) => ({ time: x[0] + "-01", value: (x[1] || 0) / 1e5 })));
-      c.addLineSeries({ color: "#e0a100", lineWidth: 2, priceScaleId: "left" }).setData(rev.filter((x) => isNum(x[3])).map((x) => ({ time: x[0] + "-01", value: x[3] })));
-      c.timeScale().fitContent();
-    }
+      <p class="muted small">本益比、股價淨值比、殖利率為交易所每日公布值；官方季報 EPS 為「年度累計」，單季數字由累計相減推得。</p>
+      ${finNarrative(d, st)}`;
   }
 
   function tabTdcc() {

@@ -105,6 +105,17 @@ def build_packet(code: str, st: dict, d: dict) -> str:
         f"- 近一年（資料內）最高 {fmt(max(yr)) if yr else '–'}、最低 {fmt(min(yr)) if yr else '–'}；K線資料共 {len(k)} 天",
         f"- 本益比 {fmt(st.get('pe'))}、股價淨值比 {fmt(st.get('pb'))}、殖利率 {fmt(st.get('dy'))}%",
     ]
+    b = d.get("band") or {}
+    if b:
+        ma = b.get("ma", {})
+        lines = ["## 價位參考（系統依官方數據計算）",
+                 f"- 均線：MA20 {fmt(ma.get('20'))}、MA60 {fmt(ma.get('60'))}、MA120 {fmt(ma.get('120'))}、MA240 {fmt(ma.get('240'))}、MA300 {fmt(ma.get('300'))}",
+                 f"- 近一年最高 {fmt(b.get('hi'))}、最低 {fmt(b.get('lo'))}"]
+        if b.get("price"):
+            pe, pr = b["pe"], b["price"]
+            lines.append(f"- 近四季 EPS {fmt(b['eps4'])} 元；近一年本益比 20/50/80 百分位 {fmt(pe[0])}/{fmt(pe[1])}/{fmt(pe[2])} 倍（{b['peDays']} 個交易日），目前 {fmt(b['peNow'])} 倍")
+            lines.append(f"- 本益比河流推算：便宜價 {fmt(pr[0])}、合理價 {fmt(pr[1])}、昂貴價 {fmt(pr[2])}（= 近四季 EPS × 各百分位本益比）")
+        parts.append("\n".join(lines))
     if d["chip"]:
         parts.append("## 三大法人與融資券（單位：張，近 20 日）\n" + table(
             ["日期", "外資", "投信", "自營商", "融資餘額", "融券餘額"],

@@ -149,6 +149,40 @@ def build_eps(code, official_by_q, backfill_eps):
     return rows
 
 
+def pctl(xs, p):
+    xs = sorted(xs)
+    if not xs:
+        return None
+    i = (len(xs) - 1) * p
+    lo, hi = int(i), min(int(i) + 1, len(xs) - 1)
+    return xs[lo] + (xs[hi] - xs[lo]) * (i - lo)
+
+
+def price_band(k, val, eps_rows):
+    """價位參考：本益比河流（近一年本益比的 20/50/80 百分位 × 近四季 EPS）＋技術面關鍵價位。"""
+    closes = [x[4] for x in k]
+    if len(closes) < 20:
+        return None
+    ma = lambda n: round(sum(closes[-n:]) / n, 2) if len(closes) >= n else None  # noqa: E731
+    yr = k[-250:]
+    out = {
+        "close": closes[-1], "date": k[-1][0],
+        "ma": {"20": ma(20), "60": ma(60), "120": ma(120), "240": ma(240), "300": ma(300)},
+        "hi": max(x[2] or x[4] for x in yr), "lo": min(x[3] or x[4] for x in yr),
+    }
+    singles = [e[1] for e in eps_rows if e[1] is not None]
+    eps4 = round(sum(singles[-4:]), 2) if len(singles) >= 4 else None
+    pes = [v[1] for v in val[-250:] if v[1] and v[1] > 0]
+    if eps4 and eps4 > 0 and len(pes) >= 60:
+        q = [round(pctl(pes, p), 2) for p in (0.2, 0.5, 0.8)]
+        out["eps4"] = eps4
+        out["pe"] = q
+        out["peNow"] = pes[-1]
+        out["price"] = [round(eps4 * x, 1) for x in q]
+        out["peDays"] = len(pes)
+    return out
+
+
 def main():
     companies = read_json(DATA / "companies.json", {})
     codes = sorted(companies)
@@ -202,10 +236,11 @@ def main():
         eps_rows = build_eps(code, {q: eps_all[q].get(code) for q in eps_qs if code in eps_all[q]}, bf.get("eps", {}))
         div = dividends.get(code, [])
         td = [[d] + tdcc[d][code] for d in tdcc_dates if code in tdcc[d]]
+        band = price_band(k, val, eps_rows)
 
         write_json(s_dir / f"{code}.json", {
             "code": code, "info": info, "k": k, "chip": chip, "val": val, "rev": rev_rows,
-            "eps": eps_rows, "div": div, "tdcc": td,
+            "eps": eps_rows, "div": div, "tdcc": td, "band": band,
             "reports": [r["id"] for r in rep_by_code.get(code, [])],
         })
 
