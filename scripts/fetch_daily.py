@@ -90,7 +90,44 @@ def fetch_prices():
     if date:
         log("上櫃行情", date, upsert_daily(date, rows), "檔")
         out_dates.add(date)
+
+    # 證交所 OpenAPI 的上市行情常常隔天才更新；用證交所網站的當日行情補上最新一天
+    latest = max(out_dates) if out_dates else None
+    if latest and not twse_has_prices(latest):
+        try:
+            n = fetch_twse_mi_index(latest)
+            log("上市行情（證交所當日）", latest, n, "檔")
+        except Exception as e:  # noqa: BLE001
+            log("上市行情（證交所當日）", latest, "尚無資料：", e)
     return out_dates
+
+
+def twse_has_prices(date: str) -> bool:
+    snap = read_json(DATA / "daily" / f"{date}.json", {})
+    return bool(snap) and snap.get("rows", {}).get("2330", [None] * 5)[IDX["c"]] is not None
+
+
+def fetch_twse_mi_index(date: str) -> int:
+    d = get_json("https://www.twse.com.tw/rwd/zh/afterTrading/MI_INDEX",
+                 {"date": date.replace("-", ""), "type": "ALLBUT0999", "response": "json"})
+    if d.get("stat") != "OK":
+        raise RuntimeError(d.get("stat"))
+    table = next((t for t in d.get("tables", []) if t.get("fields") and "證券代號" in t["fields"][0]), None)
+    if table is None:
+        raise RuntimeError("MI_INDEX 格式改變")
+    f = {k: i for i, k in enumerate(table["fields"])}
+    rows = {}
+    for r in table["data"]:
+        code = r[0].strip()
+        if not is_stock_code(code):
+            continue
+        diff = num(r[f["漲跌價差"]], 0.0)
+        sign = -1 if "-" in r[f["漲跌(+/-)"]] else 1
+        rows[code] = {"o": num(r[f["開盤價"]]), "h": num(r[f["最高價"]]), "l": num(r[f["最低價"]]),
+                      "c": num(r[f["收盤價"]]), "v": lots(r[f["成交股數"]]), "chg": sign * diff,
+                      "pe": num(r[f["本益比"]])}
+    time.sleep(3)
+    return upsert_daily(date, rows)
 
 
 # ---------------------------------------------------------------- 籌碼：三大法人、融資券

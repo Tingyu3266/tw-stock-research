@@ -129,7 +129,7 @@ function initSearch() {
 /* ------------------------------------------------------------ 報告卡片 */
 function repCard(r, q = "") {
   const st = S.byCode[r.code];
-  return `<a class="card rep-card" href="#/report/${encodeURIComponent(r.id)}">
+  return `<a class="card rep-card" href="#/stock/${encodeURIComponent(r.code)}?r=${encodeURIComponent(r.id)}">
     <div class="rep-meta"><span class="num">${esc(r.date)}</span>
       <span><b class="num">${esc(r.code)}</b> ${esc(r.name)}</span>
       ${r.rating ? `<span class="badge ${ratingCls(r.rating)}">${esc(r.rating)}</span>` : ""}
@@ -219,39 +219,35 @@ function pageReports(_, q) {
 }
 
 /* ------------------------------------------------------------ 單篇報告 */
-async function pageReport(parts) {
+/* 舊網址 #/report/{id} 轉到公司頁並顯示該篇報告 */
+function pageReport(parts) {
   const id = decodeURIComponent(parts[1] || "");
   const r = S.reports.find((x) => x.id === id);
   if (!r) { app.innerHTML = `<div class="card empty">找不到報告 ${esc(id)}</div>`; return; }
-  const txt = await fetch(`reports/${encodeURIComponent(id)}.md`).then((x) => x.text());
+  location.replace(`#/stock/${r.code}?r=${encodeURIComponent(id)}`);
+}
+
+/* 公司頁的「分析」區：官方數據圖在上，分析內容在下 */
+async function renderAnalysis(el, code, d, rid) {
+  const reps = S.reports.filter((x) => x.code === code);
+  const r = reps.find((x) => x.id === rid) || reps[0];
+  const official = officialCharts(d);
+  if (!r) {
+    el.innerHTML = `${official}<div class="card empty">還沒有這家公司的分析。<br><span class="small">排程每個交易日 20:00 依研究清單寫一家；想優先研究，把代號寫進 <code>analysis_queue.txt</code> 最上面。</span></div>`;
+    return;
+  }
+  el.innerHTML = `${official}<div class="empty">載入分析…</div>`;
+  const txt = await fetch(`reports/${encodeURIComponent(r.id)}.md`).then((x) => x.text());
   const body = txt.replace(/^﻿?---[\s\S]*?\n---\s*\n?/, "");
   const html = DOMPurify.sanitize(marked.parse(body));
-  const st = S.byCode[r.code];
-  let d = null;
-  try { d = S.detail[r.code] || (S.detail[r.code] = await getJSON(`data/s/${r.code}.json`)); } catch {}
-  const official = d ? officialCharts(d) : "";
-  const others = S.reports.filter((x) => x.code === r.code && x.id !== r.id);
-  app.innerHTML = `
-    <p class="small"><a href="#/reports">← 分析報告</a></p>
-    <div class="rep-meta"><span class="num">${esc(r.date)}</span>${r.rating ? `<span class="badge ${ratingCls(r.rating)}">${esc(r.rating)}</span>` : ""}
-      ${r.tags.map((t) => `<a class="tag" href="#/reports?tags=${encodeURIComponent(t)}">${esc(t)}</a>`).join("")}</div>
-    <h1>${esc(r.title)}</h1>
-    <p class="sub"><a href="#/stock/${esc(r.code)}"><b class="num">${esc(r.code)}</b> ${esc(r.name)}</a>　${esc(r.summary)}</p>
-    ${official}
-    <div class="layout-2">
-      <article class="card md" id="md">${html}</article>
-      <aside class="grid" style="align-content:start">
-        ${st ? `<div class="card"><h3>${esc(st.name)} 最新數據</h3><table><tbody>
-          <tr><td class="l">收盤（${esc(st.date)}）</td><td class="num">${fmt(st.c)} ${signed(st.pct, 2, "%")}</td></tr>
-          <tr><td class="l">本益比 / 殖利率</td><td class="num">${fmt(st.pe)} / ${fmt(st.dy)}%</td></tr>
-          <tr><td class="l">營收年增（${esc(st.revYm)}）</td><td>${signed(st.revYoY, 1, "%")}</td></tr>
-          <tr><td class="l">外資 5 日（張）</td><td>${signed(st.f5, 0)}</td></tr>
-          <tr><td class="l">投信 5 日（張）</td><td>${signed(st.t5, 0)}</td></tr>
-          <tr><td class="l">千張大戶</td><td class="num">${fmt(st.b1000)}% ${signed(st.b1000w, 2)}</td></tr>
-        </tbody></table><p><a class="btn sm" href="#/stock/${st.code}">看 K 線、籌碼、財務 →</a></p></div>` : ""}
-        ${others.length ? `<div class="card"><h3>同公司其他報告</h3>${others.map((o) => `<div class="small"><a href="#/report/${encodeURIComponent(o.id)}">${esc(o.date)} ${esc(o.title)}</a></div>`).join("")}</div>` : ""}
-      </aside>
-    </div>`;
+  const others = reps.filter((x) => x.id !== r.id);
+  el.innerHTML = `${official}
+    <h2>分析：${esc(r.title)}</h2>
+    <div class="rep-meta" style="margin:-6px 0 10px"><span class="num">${esc(r.date)}</span>${r.rating ? `<span class="badge ${ratingCls(r.rating)}">${esc(r.rating)}</span>` : ""}
+      ${r.tags.map((t) => `<a class="tag" href="#/reports?tags=${encodeURIComponent(t)}">${esc(t)}</a>`).join("")}
+      ${others.length ? `<span>・其他日期：${others.map((o) => `<a href="#/stock/${code}?r=${encodeURIComponent(o.id)}">${esc(o.date)}</a>`).join("、")}</span>` : ""}</div>
+    ${r.summary ? `<p class="card" style="margin:0 0 14px">${esc(r.summary)}</p>` : ""}
+    <article class="card md" id="md">${html}</article>`;
   Charts.hydrate($("#md"));
 }
 
@@ -457,7 +453,7 @@ function sma(k, n) {
 }
 const TDCC_LV = ["1-999股", "1-5張", "5-10張", "10-15張", "15-20張", "20-30張", "30-40張", "40-50張", "50-100張", "100-200張", "200-400張", "400-600張", "600-800張", "800-1000張", "1000張以上"];
 
-async function pageStock(parts) {
+async function pageStock(parts, q) {
   const code = parts[1];
   const st = S.byCode[code];
   if (!st) { app.innerHTML = `<div class="card empty">找不到股票 ${esc(code)}</div>`; return; }
@@ -483,8 +479,8 @@ async function pageStock(parts) {
       ${kv("千張大戶", fmt(st.b1000) + "%")}${kv("大戶週增減", signed(st.b1000w))}
     </div>
     <div class="tabs" id="tabs">
-      <button data-t="k" class="on">K 線</button><button data-t="chip">籌碼</button><button data-t="fin">財務</button>
-      <button data-t="tdcc">股權分散</button><button data-t="info">公司資料</button><button data-t="rep">分析報告 (${reps.length})</button>
+      <button data-t="rep" class="on">分析${reps.length ? ` (${reps.length})` : ""}</button><button data-t="k">K 線</button><button data-t="chip">籌碼</button><button data-t="fin">財務</button>
+      <button data-t="tdcc">股權分散</button><button data-t="info">公司資料</button>
     </div>
     <div id="tab"></div>`;
   $("#star").addEventListener("click", (e) => { const on = toggleWL(code); e.target.classList.toggle("on", on); e.target.textContent = on ? "★ 已加入自選" : "☆ 加入自選"; });
@@ -590,10 +586,9 @@ async function pageStock(parts) {
   }
 
   function tabRep() {
-    T().innerHTML = reps.length ? `<div class="grid cols-3">${reps.map((r) => repCard(r)).join("")}</div>` :
-      `<div class="card empty">還沒有 ${esc(st.name)} 的分析報告。<br><span class="small">用 PROMPT.md 的提示詞請 Claude 分析，存成 <code>reports/日期-${esc(code)}.md</code>。</span></div>`;
+    renderAnalysis(T(), code, d, q && q.get("r"));
   }
-  tabK();
+  tabRep();
 }
 
 /* ------------------------------------------------------------ 深淺色 */
