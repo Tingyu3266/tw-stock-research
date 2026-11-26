@@ -44,10 +44,13 @@ def pick(index: dict) -> tuple[str, str]:
 
     q = ROOT / "analysis_queue.txt"
     if q.exists():
-        for line in q.read_text(encoding="utf-8").splitlines():
-            c = line.split("#")[0].strip()
-            if c in valid and done.get(c, "") < cutoff:
-                return c, "analysis_queue.txt 指定"
+        queue = [c for c in (ln.split("#")[0].strip() for ln in q.read_text(encoding="utf-8").splitlines()) if c in valid]
+        for c in queue:
+            if c not in done:
+                return c, "研究清單中尚未研究"
+        if queue:
+            c = min(queue, key=lambda x: done.get(x, ""))
+            return c, f"研究清單已全部完成，更新最久未更新的公司（上次 {done.get(c)}）"
 
     groups = read_json(ROOT / "groups.json", {}).get("groups", [])
     codes = [c for g in groups for c in g.get("codes", []) if c in valid]

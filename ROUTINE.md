@@ -1,34 +1,84 @@
-# 每日自動分析：給 Claude 雲端排程的工作說明
+# 每日個股研究：給 Claude 雲端排程的工作說明
 
-你是這個 repo 的每日排程代理，每個交易日台灣時間 23:00 執行一次。
-此時 GitHub Actions 已在 22:00 把當天的公開資料抓進 `data/`。
-你的工作只有一件：**替一家公司寫一篇分析報告，存進 `reports/`，然後 push**。
-不要修改其他任何檔案，也不要上網搜尋，只能使用資料包裡的數據。
+這是排程自動執行，沒有人會即時回答問題，請直接完成，不要詢問。全程使用繁體中文。
+每個交易日台灣時間 22:30 執行。此時 GitHub Actions 已在 22:00 把當天的官方公開資料抓進 `data/`。
 
-## 步驟
+**這個 repo 與網站是公開的**：報告裡不可以寫任何關於使用者個人的資訊（例如身分、持股、部位）。
+排程提示詞若提供了使用者的個人背景，只能用在最後回覆給使用者的訊息裡，不能寫進檔案。
 
-1. 確認在 `main` 分支的最新版本：`git checkout main && git pull`
-2. 整理網站資料：`python3 scripts/build_site.py`
-3. **判斷今天是否為交易日**：執行
-   `ls data/daily | tail -1`，並與台灣日期 `TZ=Asia/Taipei date +%F` 比較。
-   兩者的日期不同（代表今天休市，或資料還沒抓到）就**直接結束**，不要寫報告、也不要 commit。
-4. 挑公司並產生資料包：`python3 scripts/prepare_analysis.py`
-   - 會產生 `work/analysis_prompt.md`（提示詞＋資料包）和 `work/analysis_target.txt`（報告路徑）
-   - 如果 `work/analysis_target.txt` 指的檔案已經存在，代表今天已經寫過，直接結束
-5. 讀 `work/analysis_prompt.md`，**完全照它的格式規則**寫報告，存成 `work/analysis_output.md`
-   - 第一行必須是 `---`，不要用程式碼框包住
-   - 數字只能用資料包裡的數據
-6. 驗證並存檔：`python3 scripts/save_report.py work/analysis_output.md`
-   - 如果印出「格式不合格」，依訊息修正 `work/analysis_output.md` 後重跑，最多 3 次
-7. 提交並推送（只加 reports）：
+## 步驟一：準備
+
+1. `git checkout main && git pull`
+2. `python3 scripts/build_site.py`
+3. 判斷是否為交易日：`ls data/daily | tail -1` 的日期若不是台灣今天（`TZ=Asia/Taipei date +%F`），代表休市或資料未到，**直接結束**，不寫報告、不 commit。
+4. `python3 scripts/prepare_analysis.py`
+   - 依 `analysis_queue.txt` 選出今天的公司，產生 `work/analysis_prompt.md`（內含官方數據資料包）與 `work/analysis_target.txt`（報告路徑）
+   - 若報告路徑的檔案已存在，代表今天已做過，直接結束
+
+## 步驟二：研究
+
+資料包裡的官方數據（股價、法人、融資券、集保、月營收、EPS、股利）直接引用，並註明資料日期。
+其他資訊用 WebSearch 與 WebFetch 查，所有數字必須來自本次資料包或搜尋，不可憑記憶。查不到就寫「未取得」，不可猜測或編造。
+優先來源：公開資訊觀測站 MOPS、證交所、櫃買中心、集保結算所、公司 IR 法說會簡報、Goodinfo、財報狗、CMoney、Yahoo 股市、鉅亨網、經濟日報、工商時報、Digitimes、Reuters、Bloomberg。
+
+需要查的內容：
+- 公司概況：做什麼、主要產品與營收比重、主要客戶、產業鏈位置、主要競爭對手
+- 基本面補充：毛利率、營業利益率、ROE、本益比近 5 年區間、股利政策、負債與現金流、公司展望（guidance）、近期重大新聞
+- 技術面：用資料包的均線與報酬判斷趨勢、支撐壓力；RSI/KD/MACD 能取得就附上
+- **國外分析機構觀點（重點）**：近 3 個月國際投銀與研究機構的最新報告，例如高盛、大摩、小摩、花旗、瑞銀、野村、麥格理、滙豐、美銀、Jefferies、Bernstein、里昂、Mizuho；產業面可參考 TrendForce、Counterpoint、IDC、Gartner。每筆整理：機構、日期、評等（是否調升調降）、目標價（與前次）、核心論點。原始報告多半要付費，可以用中央社、鉅亨網、經濟日報、工商時報、MoneyDJ、Reuters、Bloomberg、CNBC、Investing.com、MarketScreener 的報導，註明來源，只用報導寫明的內容。若能取得市場共識（平均／最高／最低目標價、買進／中立／賣出家數），也一併整理，並計算目前股價相對共識目標價的上漲空間。各機構看法分歧時，要點出分歧在哪裡。
+- 未來潛力與催化劑：成長動能，以及未來 1～6 個月可能的催化事件
+- 風險：產業週期、競爭、客戶集中、地緣政治、匯率、估值
+
+## 步驟三：寫報告，存成 `work/analysis_output.md`
+
+第一行必須是 `---`，不要用程式碼框包住。格式如下：
+
+```
+---
+code: "代號"
+name: 公司簡稱
+date: 台灣今天日期 YYYY-MM-DD
+title: 一句話標題（20 字內）
+rating: 看多 或 中性 或 看空（三選一，依波段＋長期綜合判斷）
+tags: [族群, 主題1, 主題2]
+summary: 兩句話摘要
+---
+
+## 30 秒速覽
+（一句話定位｜目前股價與資料日｜五面向評分表｜國外機構共識一句話｜波段一句話結論｜長期一句話結論）
+
+## 公司概況
+## 基本面
+## 技術面
+## 籌碼面
+## 國外分析機構觀點
+（表格：機構｜日期｜評等｜目標價（前次）｜核心論點｜來源；接著寫市場共識與上漲空間、分歧點）
+## 未來潛力與催化劑
+## 風險
+## 綜合評估
+（波段與長期分開寫：多方理由 3～5 點、空方理由 3～5 點、五面向評分（基本面、成長性、估值、技術面、籌碼面，1～5 分各附一句理由）、條件式判斷、接下來要觀察的 3 個關鍵指標。不可直接下買進或賣出指令）
+## 資料來源
+（連結與資料日期）
+
+本文由 AI 依公開資料整理，為資訊整理與分析，非投資建議，請自行判斷。
+```
+
+`tags` 第一個請填族群，例如：IC設計、晶圓代工、封測、AI伺服器/代工、散熱、電源、PCB/CCL、網通、半導體設備。
+
+## 步驟四：驗證並發布
+
+1. `python3 scripts/save_report.py work/analysis_output.md`；若顯示「格式不合格」，依訊息修正後重跑，最多 3 次
+2. 只提交報告：
    ```
    git add reports/
-   git commit -m "每日分析 $(TZ=Asia/Taipei date +%F)"
+   git commit -m "每日研究 $(TZ=Asia/Taipei date +%F)"
    git push origin main
    ```
-   如果 push 到 main 被拒絕（權限限制），改推到 `claude/daily-report-$(TZ=Asia/Taipei date +%F)` 分支；
-   repo 裡的「合併每日報告」workflow 會自動把它併回 main 並更新網站。
+   若沒有權限推到 main，改推到 `claude/daily-report-$(TZ=Asia/Taipei date +%F)` 分支，repo 的 workflow 會自動併回 main
+3. 推送後約 2 分鐘，報告會出現在 https://tingyu3266.github.io/tw-stock-research/#/reports
 
-## 完成時回報
+## 步驟五：最後回覆（給使用者的私人訊息，不寫進檔案）
 
-一行說明：分析了哪家公司（代號＋名稱）、評等、報告路徑；或今天為什麼沒有寫（休市／資料未到／已寫過）。
+精簡摘要：今天研究的公司、股價、五面向評分、國外機構共識目標價與上漲空間、波段與長期一句話結論、3 個觀察指標、報告網址，並註明「非投資建議」。
+排程提示詞若列出使用者持有的部位，在這則訊息裡補充對該部位的意義（續抱的觀察重點、需要警覺的訊號）。
+如果有資料查不到、推送失敗，或今天休市沒寫報告，要明確說明。
