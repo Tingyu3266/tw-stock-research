@@ -92,7 +92,7 @@ function route() {
   const page = parts[0] || "home";
   $$("nav.main a").forEach((a) => a.classList.toggle("active", a.dataset.nav === (page === "report" ? "reports" : page === "stock" ? "" : page)));
   window.scrollTo(0, 0);
-  ({ home: pageHome, reports: pageReports, report: pageReport, screener: pageScreener, groups: pageGroups, stock: pageStock }[page] || pageHome)(parts, q);
+  ({ home: pageHome, reports: pageReports, report: pageReport, screener: pageScreener, groups: pageGroups, stock: pageStock, portfolio: pagePortfolio, compare: pageCompare }[page] || pageHome)(parts, q);
 }
 
 /* ------------------------------------------------------------ 全站搜尋 */
@@ -151,13 +151,15 @@ function pageHome() {
     <h1>台股研究室</h1>
     <p class="sub">每日一家公司深度分析 ＋ 全市場 ${S.meta.stocks.toLocaleString()} 檔上市櫃股票資料。最新交易日 <b class="num">${esc(S.meta.latest)}</b>。</p>
     <div class="grid cols-4">
-      <div class="card stat"><div class="label">分析報告</div><div class="value">${S.reports.length}</div><a class="small" href="#/reports">看全部 →</a></div>
+      ${homePortfolioCard()}
       <div class="card stat"><div class="label">上漲 / 下跌家數</div><div class="value"><span class="up">${up}</span> / <span class="down">${down}</span></div><span class="small muted">共 ${rows.length} 檔有成交</span></div>
       <div class="card stat"><div class="label">月營收資料月份</div><div class="value">${esc(S.meta.revenue || "–")}</div><a class="small" href="#/screener?sort=revYoY">營收年增排行 →</a></div>
       <div class="card stat"><div class="label">集保股權分散</div><div class="value">${esc(S.meta.tdcc || "–")}</div><a class="small" href="#/screener?sort=b1000w">大戶增持排行 →</a></div>
     </div>
-    <h2>最新分析報告</h2>
+    <h2>最新分析報告 <a class="small" href="#/reports">全部 ${S.reports.length} 篇 →</a></h2>
     <div class="grid cols-3">${S.reports.slice(0, 6).map((r) => repCard(r)).join("") || `<div class="card empty">還沒有報告。把 Claude 的分析存到 reports/ 資料夾即可。</div>`}</div>
+    <h2>產業熱力圖 <span class="muted small">（成交值加權平均漲跌，格子越大成交值越高；點進去看該產業個股）</span></h2>
+    ${industryHeatmap()}
     <h2>今日市場焦點 <span class="muted small">（成交量 &gt; 500 張）</span></h2>
     <div class="grid cols-4">
       ${mini("漲幅前 8", topBy("pct"), "pct", (v) => signed(v, 2, "%"))}
@@ -412,6 +414,8 @@ const COLS = [
   ["t5", "投信5日", "s0", true], ["t20", "投信20日", "s0", true], ["tS", "投信連買賣天", "s0", true], ["d5", "自營5日", "s0", true],
   ["mb", "融資餘額", 0, true], ["mb5", "融資5日增減", "s0", true], ["ss", "融券餘額", 0, true],
   ["b1000", "千張大戶%", 2, true], ["b1000w", "大戶週增減", "s2", true], ["b400", "400張以上%", 2, true], ["holders", "股東人數", 0, true],
+  ["volR", "量比(今/20日均)", 2, true], ["bull", "均線排列", "bull"], ["hiGap", "距一年高點%", "pct", true],
+  ["r60", "60日漲跌%", "pct", true], ["r240", "一年漲跌%", "pct", true], ["zone", "本益比位置", "zone"],
   ["rDate", "最近報告", "rep"],
 ];
 const COLMAP = Object.fromEntries(COLS.map((c) => [c[0], c]));
@@ -420,7 +424,10 @@ const PRESETS = [
   ["外資連買 ≥3 天", { fS_min: 3 }], ["投信連買 ≥3 天", { tS_min: 3 }], ["營收年增 >20%", { revYoY_min: 20 }],
   ["高殖利率 >5%", { dy_min: 5 }], ["低本益比 <12", { pe_min: 0.01, pe_max: 12 }], ["千張大戶週增", { b1000w_min: 0.3 }],
   ["融資減、外資買", { mb5_max: -1, f5_min: 1 }], ["站上季線", { above60: "1" }], ["有分析報告", { rep: "1" }],
+  ["今天爆量（量比≥2）", { volR_min: 2 }], ["均線多頭排列", { bull: "1" }], ["接近一年新高（3% 內）", { hiGap_min: -3 }],
+  ["本益比便宜區", { zone: "-1" }], ["好股價跌深（營收年增>15%、距高點>25%）", { revYoY_min: 15, hiGap_max: -25 }],
 ];
+const ZONE_TXT = { "-1": ["便宜", "bull"], 0: ["合理", "neutral"], 1: ["昂貴", "bear"] };
 function cell(r, c) {
   const [k, , f] = c, v = r[k];
   if (f === "code") return `<td class="l"><a class="code" href="#/stock/${v}">${v}</a></td>`;
@@ -429,6 +436,8 @@ function cell(r, c) {
   if (f === "s0") return `<td>${signed(v, 0)}</td>`;
   if (f === "s2") return `<td>${signed(v, 2)}</td>`;
   if (f === "yi") return `<td class="num">${yi(v)}</td>`;
+  if (f === "bull") return `<td>${v === 1 ? '<span class="up">多頭</span>' : v === -1 ? '<span class="down">空頭</span>' : v === 0 ? '<span class="muted">糾結</span>' : "–"}</td>`;
+  if (f === "zone") return `<td>${v == null ? "–" : `<span class="badge ${ZONE_TXT[v][1]}">${ZONE_TXT[v][0]}</span>`}</td>`;
   if (f === "rep") return `<td>${v ? `<a href="#/reports?q=${r.code}">${esc(v)}</a> <span class="badge ${ratingCls(r.rating)}">${esc(r.rating || "")}</span>` : ""}</td>`;
   if (k === "c") return `<td class="num ${cls(r.pct)}">${fmt(v, v >= 1000 ? 0 : 2)}</td>`;
   return `<td class="num">${fmt(v, f)}</td>`;
@@ -447,7 +456,9 @@ function pageScreener(_, q) {
         <div class="field"><label>產業</label><select id="s-ind"><option value="">全部產業</option>${inds.map((x) => `<option>${esc(x)}</option>`).join("")}</select></div>
         <div class="field"><label>分組</label><select id="s-group"><option value="">全部</option>${allGroups().map((g) => `<option value="${esc(g.id)}">${esc(g.name)}</option>`).join("")}</select></div>
         <div class="field"><label>其他</label><select id="s-rep"><option value="">不限</option><option value="1">有分析報告</option></select></div>
-        <div class="field"><label>均線</label><select id="s-above60"><option value="">不限</option><option value="1">收盤在季線(60日)上</option><option value="2">收盤在月線(20日)上</option><option value="-1">收盤在季線下</option></select></div>
+        <div class="field"><label>均線</label><select id="s-above60"><option value="">不限</option><option value="1">收盤在季線(60日)上</option><option value="2">收盤在月線(20日)上</option><option value="-1">收盤在季線下</option><option value="3">收盤在半年線(120日)上</option></select></div>
+        <div class="field"><label>均線排列</label><select id="s-bull"><option value="">不限</option><option value="1">多頭排列</option><option value="0">糾結</option><option value="-1">空頭排列</option></select></div>
+        <div class="field"><label>本益比位置（近一年）</label><select id="s-zone"><option value="">不限</option><option value="-1">便宜區</option><option value="0">合理區</option><option value="1">昂貴區</option></select></div>
         ${main.map((k) => rangeField(COLMAP[k])).join("")}
       </div>
       <details class="adv"><summary>更多條件（${rangeCols.length - main.length} 項）</summary>
@@ -466,7 +477,7 @@ function pageScreener(_, q) {
   let cols = (q.get("cols") || "").split(",").filter((k) => COLMAP[k]);
   if (!cols.length) cols = [...DEFAULT_COLS];
   if (!cols.includes(sort) && COLMAP[sort]) cols.splice(5, 0, sort);
-  const simple = ["q", "mkt", "ind", "group", "rep", "above60"];
+  const simple = ["q", "mkt", "ind", "group", "rep", "above60", "bull", "zone"];
   simple.forEach((k) => { const el = $(`#s-${k}`); el.value = q.get(k) || ""; el.addEventListener("input", () => { page = 1; apply(); }); });
   $$(".rg").forEach((el) => { el.value = q.get(el.dataset.k) || ""; el.addEventListener("input", () => { page = 1; apply(); }); });
   if ($$(".adv .rg").some((el) => el.value)) $(".adv").open = true;
@@ -494,6 +505,9 @@ function pageScreener(_, q) {
       if (v.above60 === "1" && !(r.c > r.ma60)) return false;
       if (v.above60 === "2" && !(r.c > r.ma20)) return false;
       if (v.above60 === "-1" && !(isNum(r.ma60) && r.c < r.ma60)) return false;
+      if (v.above60 === "3" && !(r.c > r.ma120)) return false;
+      if (v.bull !== "" && String(r.bull) !== v.bull) return false;
+      if (v.zone !== "" && String(r.zone) !== v.zone) return false;
       for (const [k, m, x] of ranges) { const y = r[k]; if (!isNum(y)) return false; if (m === "min" ? y < x : y > x) return false; }
       return true;
     });
@@ -634,6 +648,8 @@ async function pageStock(parts, q) {
       <h1>${esc(st.name)} <span class="num muted">${esc(code)}</span></h1>
       <span class="badge">${esc(st.mkt)}</span><a class="badge" href="#/screener?ind=${encodeURIComponent(st.ind)}">${esc(st.ind)}</a>
       <button class="star ${inWL ? "on" : ""}" id="star">${inWL ? "★ 已加入自選" : "☆ 加入自選"}</button>
+      <a class="star" href="#/portfolio?add=${code}">＋ 記一筆交易</a>
+      <a class="star" href="#/compare?c=${code}">⇄ 比較</a>
     </div>
     <div class="stock-head"><span class="px ${cls(st.pct)}">${fmt(st.c)}</span><span>${signed(st.chg)} (${signed(st.pct, 2, "%")})</span>
       <span class="muted small">${esc(st.date)}　成交 ${fint(st.v)} 張</span></div>
@@ -810,7 +826,8 @@ async function pageStock(parts, q) {
       ${row("上市櫃日期", esc(info.listed))}${row("實收資本額", isNum(info.cap) ? fmt(info.cap / 1e8, 2) + " 億元" : "")}${row("已發行股數", isNum(info.shares) ? fint(info.shares / 1000) + " 張" : "")}
       ${row("地址", esc(info.addr))}${row("網站", info.web ? `<a href="${esc(/^https?:/.test(info.web) ? info.web : "https://" + info.web)}" target="_blank" rel="noopener">${esc(info.web)}</a>` : "")}
       ${row("外部連結", `<a href="https://mops.twse.com.tw/mops/#/web/t05st03?companyId=${code}" target="_blank" rel="noopener">公開資訊觀測站</a>`)}
-    </tbody></table></div>`;
+    </tbody></table></div>
+    ${peersTable(code)}`;
   }
 
   function tabRep() {

@@ -67,7 +67,14 @@ def build_reports(companies):
         tags = meta.get("tags", [])
         if isinstance(tags, str):
             tags = [t.strip() for t in re.split(r"[,，、]", tags) if t.strip()]
+        def rng(v):
+            try:
+                a = [float(str(x).replace(",", "")) for x in (v or [])][:2]
+                return a if len(a) == 2 and a[0] > 0 and a[1] >= a[0] else None
+            except ValueError:
+                return None
         reports.append({
+            "buy": rng(meta.get("buy")), "sell": rng(meta.get("sell")),
             "id": rid, "code": code,
             "name": meta.get("name") or companies.get(code, {}).get("n", ""),
             "date": date, "title": meta.get("title", rid), "rating": meta.get("rating", ""),
@@ -183,6 +190,46 @@ def price_band(k, val, eps_rows):
     return out
 
 
+def vol_ratio(k):
+    """今日量 ÷ 前 20 日均量"""
+    vs = [x[5] for x in k if x[5]]
+    if len(vs) < 21:
+        return None
+    avg = sum(vs[-21:-1]) / 20
+    return round(vs[-1] / avg, 2) if avg else None
+
+
+def bull_flag(closes):
+    """1 = 均線多頭排列（收盤 > MA5 > MA20 > MA60）；-1 = 空頭排列；0 = 其他"""
+    if len(closes) < 60:
+        return None
+    m5, m20, m60 = (sum(closes[-n:]) / n for n in (5, 20, 60))
+    c = closes[-1]
+    return 1 if c > m5 > m20 > m60 else -1 if c < m5 < m20 < m60 else 0
+
+
+def hi_gap(k):
+    """距近一年最高價的跌幅 %（0 代表創新高）"""
+    yr = k[-250:]
+    if len(yr) < 20:
+        return None
+    hi = max(x[2] or x[4] for x in yr)
+    return round((k[-1][4] / hi - 1) * 100, 2)
+
+
+def zone_of(band):
+    """本益比河流位置：-1 便宜、0 合理、1 昂貴"""
+    if not band or not band.get("price"):
+        return None
+    lo, _, hi = band["price"]
+    c = band["close"]
+    return -1 if c <= lo else 1 if c >= hi else 0
+
+
+def ret_n(closes, n):
+    return round((closes[-1] / closes[-1 - n] - 1) * 100, 2) if len(closes) > n else None
+
+
 def main():
     companies = read_json(DATA / "companies.json", {})
     codes = sorted(companies)
@@ -209,7 +256,8 @@ def main():
     index_fields = ["code", "name", "mkt", "ind", "date", "c", "chg", "pct", "v", "r20", "ma20", "ma60",
                     "pe", "dy", "pb", "f1", "f5", "f20", "fS", "t5", "t20", "tS", "d5", "mb", "mb5", "ss",
                     "revYm", "rev", "revMoM", "revYoY", "revCum", "epsQ", "eps", "eps4", "cash",
-                    "b1000", "b1000w", "b400", "holders", "rDate", "rating", "nRep"]
+                    "b1000", "b1000w", "b400", "holders", "rDate", "rating", "nRep",
+                    "volR", "bull", "hiGap", "zone", "ma120", "r60", "r240"]
     index_rows = []
     latest_date = ""
 
@@ -285,6 +333,8 @@ def main():
             leps[0] if leps else None, (leps[2] if leps[2] is not None else leps[1]) if leps else None, eps4, cash,
             b1000, b1000w, b400, holders,
             reps[0]["date"] if reps else None, reps[0]["rating"] if reps else None, len(reps),
+            vol_ratio(k), bull_flag(closes), hi_gap(k), zone_of(band), ma(120),
+            ret_n(closes, 60), ret_n(closes, 240),
         ])
 
     write_json(SITE / "data" / "index.json", {"fields": index_fields, "rows": index_rows})
