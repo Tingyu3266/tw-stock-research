@@ -19,7 +19,8 @@
     if (v <= 0) return 1;
     const p = Math.pow(10, Math.floor(Math.log10(v)));
     const m = v / p;
-    return (m <= 1 ? 1 : m <= 2 ? 2 : m <= 2.5 ? 2.5 : m <= 5 ? 5 : 10) * p;
+    const steps = [1, 1.2, 1.5, 2, 2.5, 3, 4, 5, 6, 8, 10];
+    return steps.find((s) => m <= s) * p;
   }
   function seriesOf(spec) {
     if (Array.isArray(spec.series) && spec.series.length) return spec.series.slice(0, 4).map((s) => ({ name: s.name, values: s.values.map(Number) }));

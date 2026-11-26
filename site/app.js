@@ -582,6 +582,41 @@ function sma(k, n) {
   k.forEach((x, i) => { s += x[4]; if (i >= n) s -= k[i - n][4]; if (i >= n - 1) out.push({ time: x[0], value: +(s / n).toFixed(2) }); });
   return out;
 }
+/* K 線設定：預設均線、顏色（固定順序）、日/週/月 K 合併 */
+const DEFAULT_MA = [5, 20, 60, 120, 300];
+const MA_COLORS = ["#e0a100", "#7a5af8", "#0ba5ec", "#e87ba4", "#1baf7a", "#eb6834", "#2a78d6", "#8a8a8a"];
+const MA_NAMES = { d: { 5: "週線", 20: "月線", 60: "季線", 120: "半年線", 240: "年線" }, w: {}, m: {} };
+function loadKPrefs() {
+  let p = null;
+  try { p = JSON.parse(localStorage.getItem("tw-kprefs") || "null"); } catch {}
+  if (!p || !Array.isArray(p.ma)) p = { p: "d", ma: DEFAULT_MA.map((n) => ({ n, on: true })) };
+  if (!["d", "w", "m"].includes(p.p)) p.p = "d";
+  return p;
+}
+function saveKPrefs(p) { try { localStorage.setItem("tw-kprefs", JSON.stringify(p)); } catch {} }
+function aggK(k, p) {
+  if (p === "d") return k;
+  const key = (date) => {
+    if (p === "m") return date.slice(0, 7);
+    const t = new Date(date + "T00:00:00Z"), dow = (t.getUTCDay() + 6) % 7;
+    t.setUTCDate(t.getUTCDate() - dow);
+    return t.toISOString().slice(0, 10);
+  };
+  const out = [];
+  let cur = null, ck = null;
+  for (const x of k) {
+    const kk = key(x[0]);
+    if (kk !== ck) {
+      if (cur) out.push(cur);
+      ck = kk;
+      cur = [x[0], x[1] ?? x[4], x[2] ?? x[4], x[3] ?? x[4], x[4], x[5] || 0];
+    } else {
+      cur[2] = Math.max(cur[2], x[2] ?? x[4]); cur[3] = Math.min(cur[3], x[3] ?? x[4]); cur[4] = x[4]; cur[5] += x[5] || 0;
+    }
+  }
+  if (cur) out.push(cur);
+  return out;
+}
 const TDCC_LV = ["1-999股", "1-5張", "5-10張", "10-15張", "15-20張", "20-30張", "30-40張", "40-50張", "50-100張", "100-200張", "200-400張", "400-600張", "600-800張", "800-1000張", "1000張以上"];
 
 async function pageStock(parts, q) {
@@ -626,47 +661,78 @@ async function pageStock(parts, q) {
 
   function tabK() {
     if (d.k.length < 2) { T().innerHTML = noData("K 線資料不足"); return; }
-    const MAS = [[5, "MA5", "#e0a100"], [20, "MA20 月線", "#7a5af8"], [60, "MA60 季線", "#0ba5ec"], [120, "MA120 半年線", "#e87ba4"], [300, "MA300", "#1baf7a"]];
-    const maData = MAS.map(([n]) => sma(d.k, n));
-    const maAt = MAS.map((_, i) => Object.fromEntries(maData[i].map((p) => [p.time, p.value])));
-    const idx = Object.fromEntries(d.k.map((x, i) => [x[0], i]));
     T().innerHTML = `<div class="card">
+      <div class="kctl">
+        <div class="seg" id="kper"><button data-p="d">日K</button><button data-p="w">週K</button><button data-p="m">月K</button></div>
+        <div class="ma-pick" id="mapick"></div>
+        <form class="ma-add" id="maadd"><input type="number" min="2" max="500" placeholder="天數" id="maN" aria-label="自訂均線天數"><button class="btn sm">＋ 新增均線</button></form>
+      </div>
       <div class="kinfo" id="kinfo"></div>
       <div class="legend" id="kma"></div>
       <div class="chart" id="ck"></div>
       <div class="vol-head small"><span>成交量（張）</span><b class="num" id="kvol"></b></div>
       <div class="chart vol" id="cv"></div>
-      <div class="muted small">紅漲綠跌。滑鼠移到 K 棒上可看當天明細，兩張圖會同步捲動。${d.k.length < 300 ? `目前只有 ${d.k.length} 天資料，MA300 需要 300 個交易日才會出現。` : ""}</div></div>`;
+      <div class="muted small" id="knote"></div></div>`;
+    const per = { d: "日", w: "週", m: "月" };
+    let st0 = loadKPrefs();
+    $$("#kper button").forEach((b) => b.addEventListener("click", () => { st0.p = b.dataset.p; saveKPrefs(st0); drawK(); }));
+    $("#maadd").addEventListener("submit", (e) => {
+      e.preventDefault();
+      const n = Math.round(+$("#maN").value);
+      if (n >= 2 && n <= 500 && !st0.ma.some((m) => m.n === n)) { st0.ma.push({ n, on: true }); st0.ma.sort((a, b) => a.n - b.n); saveKPrefs(st0); drawK(); }
+      $("#maN").value = "";
+    });
+    drawK();
+
+    function drawK() {
+      S.charts.forEach((c) => { try { c.remove(); } catch {} }); S.charts = [];
+      const K = aggK(d.k, st0.p);
+      $$("#kper button").forEach((b) => b.classList.toggle("on", b.dataset.p === st0.p));
+      const MAS = st0.ma.map((m, j) => ({ ...m, color: MA_COLORS[j % MA_COLORS.length], name: `MA${m.n}${MA_NAMES[st0.p][m.n] ? " " + MA_NAMES[st0.p][m.n] : ""}` }));
+      $("#mapick").innerHTML = MAS.map((m, j) => `<label class="ma-chip${m.on ? " on" : ""}" style="--c:${m.color}"><input type="checkbox" data-j="${j}" ${m.on ? "checked" : ""}><i></i>${m.n}${per[st0.p]}${DEFAULT_MA.includes(m.n) ? "" : `<button type="button" class="ma-x" data-x="${j}" title="移除">×</button>`}</label>`).join("");
+      $$("#mapick input").forEach((cb) => cb.addEventListener("change", () => { st0.ma[+cb.dataset.j].on = cb.checked; saveKPrefs(st0); drawK(); }));
+      $$("#mapick .ma-x").forEach((b) => b.addEventListener("click", (e) => { e.preventDefault(); st0.ma.splice(+b.dataset.x, 1); saveKPrefs(st0); drawK(); }));
+      const on = MAS.filter((m) => m.on);
+      const maData = on.map((m) => sma(K, m.n));
+      const maAt = maData.map((s) => Object.fromEntries(s.map((p) => [p.time, p.value])));
+      const idx = Object.fromEntries(K.map((x, i) => [x[0], i]));
+      const short = on.filter((m) => m.n > K.length).map((m) => `MA${m.n}`);
+      $("#knote").textContent = `紅漲綠跌。滑鼠移到 K 棒上可看明細，兩張圖同步捲動。勾選設定會記在這台瀏覽器。${short.length ? `目前只有 ${K.length} 根${per[st0.p]}K，${short.join("、")} 資料不足暫時畫不出來。` : ""}`;
+      tabKDraw(K, on, maData, maAt, idx, per[st0.p]);
+    }
+  }
+
+  function tabKDraw(K, MAS, maData, maAt, idx, unit) {
     const up = css("--up"), dn = css("--down");
     const info = (i) => {
-      const x = d.k[i], p = i > 0 ? d.k[i - 1][4] : null;
+      const x = K[i], p = i > 0 ? K[i - 1][4] : null;
       const chg = p ? x[4] - p : null, pct = p ? (chg / p) * 100 : null, amp = p && x[2] != null ? ((x[2] - x[3]) / p) * 100 : null;
       const col = (v) => (v == null ? "" : v > p ? "up" : v < p ? "down" : "");
       const cell = (k, v) => `<div><span class="k">${k}</span><span class="v num">${v}</span></div>`;
-      $("#kinfo").innerHTML = `<div class="kdate num">${x[0]}</div>
+      $("#kinfo").innerHTML = `<div class="kdate num">${x[0]}${unit !== "日" ? `<span class="muted small">（${unit}K 起始日）</span>` : ""}</div>
         ${cell("開盤", `<span class="${col(x[1])}">${fmt(x[1])}</span>`)}${cell("最高", `<span class="${col(x[2])}">${fmt(x[2])}</span>`)}
         ${cell("最低", `<span class="${col(x[3])}">${fmt(x[3])}</span>`)}${cell("收盤", `<span class="${col(x[4])}">${fmt(x[4])}</span>`)}
         ${cell("漲跌", signed(chg))}${cell("幅度", signed(pct, 2, "%"))}${cell("振幅", amp == null ? "–" : fmt(amp) + "%")}
-        ${cell("成交量", fint(x[5]) + " 張")}${cell("昨收", fmt(p))}`;
-      $("#kma").innerHTML = MAS.map(([n, name, c], j) => `<span><i style="background:${c}"></i>${name} <b class="num">${maAt[j][x[0]] != null ? fmt(maAt[j][x[0]]) : "–"}</b></span>`).join("");
+        ${cell("成交量", fint(x[5]) + " 張")}${cell(unit === "日" ? "昨收" : "前期收盤", fmt(p))}`;
+      $("#kma").innerHTML = MAS.map((m, j) => `<span><i style="background:${m.color}"></i>${m.name} <b class="num">${maAt[j][x[0]] != null ? fmt(maAt[j][x[0]]) : "–"}</b></span>`).join("");
       $("#kvol").textContent = `${x[0]}　${fint(x[5])} 張`;
     };
     const c = mkChart($("#ck"), { timeScale: { visible: false, borderColor: css("--line") } });
     const cs = c.addCandlestickSeries({ upColor: up, downColor: dn, borderUpColor: up, borderDownColor: dn, wickUpColor: up, wickDownColor: dn });
-    cs.setData(d.k.map((x) => ({ time: x[0], open: x[1] ?? x[4], high: x[2] ?? x[4], low: x[3] ?? x[4], close: x[4] })));
-    MAS.forEach(([, , col], j) => {
-      if (maData[j].length) c.addLineSeries({ color: col, lineWidth: 1, lastValueVisible: false, priceLineVisible: false, crosshairMarkerVisible: false }).setData(maData[j]);
+    cs.setData(K.map((x) => ({ time: x[0], open: x[1] ?? x[4], high: x[2] ?? x[4], low: x[3] ?? x[4], close: x[4] })));
+    MAS.forEach((m, j) => {
+      if (maData[j].length) c.addLineSeries({ color: m.color, lineWidth: 1, lastValueVisible: false, priceLineVisible: false, crosshairMarkerVisible: false }).setData(maData[j]);
     });
     // 成交量獨立一張圖，與 K 線同步
     const v = mkChart($("#cv"));
     const vs = v.addHistogramSeries({ priceFormat: { type: "volume" }, priceLineVisible: false });
-    vs.setData(d.k.map((x, i) => ({ time: x[0], value: x[5] || 0, color: (i && x[4] < d.k[i - 1][4] ? dn : up) + "aa" })));
+    vs.setData(K.map((x, i) => ({ time: x[0], value: x[5] || 0, color: (i && x[4] < K[i - 1][4] ? dn : up) + "aa" })));
     v.priceScale("right").applyOptions({ scaleMargins: { top: 0.1, bottom: 0 }, minimumWidth: 72 });
     c.priceScale("right").applyOptions({ minimumWidth: 72 });
     let syncing = false;
     const sync = (from, to) => from.timeScale().subscribeVisibleLogicalRangeChange((r) => { if (!r || syncing) return; syncing = true; to.timeScale().setVisibleLogicalRange(r); syncing = false; });
     sync(c, v); sync(v, c);
-    const n = d.k.length;
+    const n = K.length;
     c.timeScale().setVisibleLogicalRange({ from: Math.max(0, n - 130), to: n + 2 });
     info(n - 1);
     const onMove = (p) => { const i = p && p.time != null ? idx[p.time] : undefined; info(i == null ? n - 1 : i); };
@@ -752,6 +818,20 @@ async function pageStock(parts, q) {
   }
   tabRep();
 }
+
+/* ------------------------------------------------------------ 圖表點一下放大、再點一下縮回 */
+document.addEventListener("click", (e) => {
+  if (e.target.closest("details, summary, a, button, input")) return;
+  const fig = e.target.closest("figure.cl");
+  const open = $("figure.cl.zoom");
+  if (open && open !== fig) { open.classList.remove("zoom"); document.body.classList.remove("zoomed"); return; }
+  if (!fig) return;
+  const on = fig.classList.toggle("zoom");
+  document.body.classList.toggle("zoomed", on);
+});
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape") { const z = $("figure.cl.zoom"); if (z) { z.classList.remove("zoom"); document.body.classList.remove("zoomed"); } }
+});
 
 /* ------------------------------------------------------------ 深淺色 */
 (function theme() {

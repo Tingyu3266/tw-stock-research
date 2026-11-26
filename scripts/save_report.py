@@ -52,6 +52,16 @@ def validate(text: str, target: str) -> list[str]:
 
 
 def main():
+    if len(sys.argv) > 2 and sys.argv[1] == "--check":
+        # 只檢查 reports/ 裡已存在的報告（補寫段落後使用），不搬動檔案
+        p = Path(sys.argv[2])
+        errs = validate(p.read_text(encoding="utf-8"), p.name)
+        for e in errs:
+            log("!! 格式不合格：", e)
+        if errs:
+            sys.exit(1)
+        log("格式檢查通過", p)
+        return
     src = Path(sys.argv[1] if len(sys.argv) > 1 else ROOT / "work" / "analysis_output.md")
     target = (ROOT / "work" / "analysis_target.txt").read_text(encoding="utf-8").strip()
     text = src.read_text(encoding="utf-8").strip()

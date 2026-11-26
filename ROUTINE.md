@@ -7,6 +7,16 @@
 重點是商業模式與產品，**用白話解釋，能用圖表就用圖表**。不要塞進零碎的技術指標、不要大量列新聞或券商報告。
 這個 repo 與網站是公開的，報告不寫任何個人資訊。
 
+## 步驟零：補寫舊報告（`refresh_queue.txt` 有內容時才做）
+
+報告格式新增段落後，舊報告會列在 `refresh_queue.txt`（每行一個報告路徑，`#` 開頭為註解）。這一步**不受交易日限制**，每一行依序：
+1. 讀那篇報告，並執行 `python3 scripts/build_site.py`（只需一次）與 `python3 scripts/prepare_analysis.py --code 代號`，取得 `work/analysis_prompt.md` 裡最新的資料包（含「價位參考」）
+2. 依步驟二的研究方式查資料（特別是第 8 點「估值依據」），照步驟三格式寫出報告**缺少的段落**（目前是 `## 買賣評估`），插在 `## 資料來源` 之前；不要改動其他段落，只在資料來源末尾補上新引用的連結。報告裡已有該段落就跳過
+3. `python3 scripts/save_report.py --check 報告路徑` 通過後，把那一行從 `refresh_queue.txt` 刪掉
+4. 全部處理完，`git add reports/ refresh_queue.txt`、commit「補寫報告段落」並 push（推送方式同步驟四）
+
+做完繼續步驟一。
+
 ## 步驟一：準備
 
 1. `git checkout main && git pull`
