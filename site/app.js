@@ -135,6 +135,7 @@ function repCard(r, q = "") {
       ${r.rating ? `<span class="badge ${ratingCls(r.rating)}">${esc(r.rating)}</span>` : ""}
       ${st ? `<span class="num">${fmt(st.c)}</span> ${signed(st.pct, 2, "%")}` : ""}</div>
     <div class="title">${hl(r.title, q)}</div>
+    ${r.buy || r.sell ? (() => { const z = st && zoneOfReport(r, st.c); return `<div class="small">參考買進 <b class="num">${r.buy ? r.buy.map((v) => fmt(v, 0)).join("～") : "–"}</b>・賣出 <b class="num">${r.sell ? r.sell.map((v) => fmt(v, 0)).join("～") : "–"}</b>${z ? ` <span class="badge ${z.c}">${z.t}</span>` : ""}</div>`; })() : ""}
     <div class="muted small">${hl(q ? snippet(r.summary + " " + r.text, q) : r.summary, q)}</div>
     <div class="chips">${r.tags.map((t) => `<span class="tag">${esc(t)}</span>`).join("")}</div>
   </a>`;
@@ -156,6 +157,7 @@ function pageHome() {
       <div class="card stat"><div class="label">月營收資料月份</div><div class="value">${esc(S.meta.revenue || "–")}</div><a class="small" href="#/screener?sort=revYoY">營收年增排行 →</a></div>
       <div class="card stat"><div class="label">集保股權分散</div><div class="value">${esc(S.meta.tdcc || "–")}</div><a class="small" href="#/screener?sort=b1000w">大戶增持排行 →</a></div>
     </div>
+    ${homeAlerts()}
     <h2>最新分析報告 <a class="small" href="#/reports">全部 ${S.reports.length} 篇 →</a></h2>
     <div class="grid cols-3">${S.reports.slice(0, 6).map((r) => repCard(r)).join("") || `<div class="card empty">還沒有報告。把 Claude 的分析存到 reports/ 資料夾即可。</div>`}</div>
     <h2>產業熱力圖 <span class="muted small">（成交值加權平均漲跌，格子越大成交值越高；點進去看該產業個股）</span></h2>
@@ -464,6 +466,7 @@ function pageScreener(_, q) {
       <details class="adv"><summary>更多條件（${rangeCols.length - main.length} 項）</summary>
         <div class="filters">${rangeCols.filter((c) => !main.includes(c[0])).map(rangeField).join("")}</div></details>
       <div class="presets"><span class="muted small" style="align-self:center">快速條件：</span>${PRESETS.map((p, i) => `<button class="btn sm" data-p="${i}">${p[0]}</button>`).join("")}</div>
+      <div class="presets" id="mysaved"></div>
     </div>
     <div class="toolbar">
       <span id="s-count" class="muted"></span>
@@ -487,6 +490,23 @@ function pageScreener(_, q) {
     page = 1; apply();
   }));
   $("#s-clear").addEventListener("click", () => { simple.forEach((k) => ($(`#s-${k}`).value = "")); $$(".rg").forEach((el) => (el.value = "")); page = 1; apply(); });
+  // 我的條件：把目前網址上的條件存起來（存在這台瀏覽器）
+  const SV = "tw-screens";
+  const loadSv = () => { try { return JSON.parse(localStorage.getItem(SV) || "[]"); } catch { return []; } };
+  const drawSv = () => {
+    const sv = loadSv();
+    $("#mysaved").innerHTML = `<span class="muted small" style="align-self:center">我的條件：</span>${sv.map((s, i) => `<a class="btn sm" href="#/screener?${esc(s.q)}">${esc(s.name)}</a><button class="ma-x" data-svx="${i}" title="刪除">×</button>`).join("")}<button class="btn sm" id="sv-add">＋ 儲存目前條件</button>`;
+    $("#sv-add").addEventListener("click", () => {
+      const qs = (location.hash.split("?")[1] || "");
+      if (!qs) { alert("先設定一些篩選條件再儲存"); return; }
+      const name = prompt("幫這組條件取個名字：", "我的選股");
+      if (!name) return;
+      try { localStorage.setItem(SV, JSON.stringify([...loadSv(), { name: name.slice(0, 20), q: qs }])); } catch {}
+      drawSv();
+    });
+    $$("[data-svx]").forEach((b) => b.addEventListener("click", () => { const sv2 = loadSv(); sv2.splice(+b.dataset.svx, 1); try { localStorage.setItem(SV, JSON.stringify(sv2)); } catch {} drawSv(); }));
+  };
+  drawSv();
   $("#s-cols").addEventListener("click", () => { const p = $("#s-colpick"); p.style.display = p.style.display === "none" ? "" : "none"; });
   $$("#s-colpick input").forEach((cb) => { cb.checked = cols.includes(cb.value); cb.addEventListener("change", () => { cols = COLS.map((c) => c[0]).filter((k) => $(`#s-colpick input[value="${k}"]`).checked); apply(); }); });
 

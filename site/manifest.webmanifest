@@ -1,0 +1,10 @@
+{
+  "name": "台股研究室",
+  "short_name": "台股研究室",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#0f1216",
+  "theme_color": "#2457d6",
+  "lang": "zh-Hant-TW",
+  "icons": [{ "src": "icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }]
+}

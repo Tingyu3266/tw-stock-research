@@ -193,6 +193,9 @@ body.zoomed { overflow: hidden; }
 a.star { display: inline-block; color: var(--text); font-size: 14px; }
 a.star:hover { text-decoration: none; border-color: var(--accent); }
 input.tg { width: 70px; padding: 3px 6px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel2); }
+.alerts { list-style: none; margin: 0; padding: 0; }
+.alerts li { padding: 6px 0; border-bottom: 1px dashed var(--line); }
+.alerts li:last-child { border-bottom: 0; }
 .chart.tall { height: 520px; }
 .chart.vol { height: 140px; }
 .vol-head { display: flex; justify-content: space-between; color: var(--muted); border-top: 1px solid var(--line); padding-top: 6px; margin-top: 2px; }

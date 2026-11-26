@@ -347,6 +347,29 @@ function homePortfolioCard() {
   return `<div class="card stat"><div class="label">我的持股市值（${H.list.length} 檔）</div><div class="value">${fint(tot)}</div><div class="small">今日 ${signed(today, 0)}・未實現 ${signed(tot - cost, 0)} <a href="#/portfolio">→</a></div></div>`;
 }
 
+/* ============================================================ 首頁提醒：持股停利停損、研究報告買賣區 */
+function homeAlerts() {
+  const items = [];
+  const p = pfLoad();
+  const held = new Set();
+  pfHoldings(p).list.forEach((x) => {
+    held.add(x.code);
+    const tg = p.tgt[x.code] || {};
+    if (tg.tp && x.price >= tg.tp) items.push(["bear", `${x.name} 已達你設的停利價 ${fmt(tg.tp)}（現價 ${fmt(x.price)}）`, x.code]);
+    if (tg.sl && x.price <= tg.sl) items.push(["bull", `${x.name} 已跌到你設的停損價 ${fmt(tg.sl)}（現價 ${fmt(x.price)}）`, x.code]);
+  });
+  const seen = new Set();
+  S.reports.forEach((r) => {
+    if (seen.has(r.code)) return;
+    seen.add(r.code);
+    const st = S.byCode[r.code];
+    const z = st && zoneOfReport(r, st.c);
+    if (z && z.c !== "neutral") items.push([z.c, `${st.name} ${z.t}（研究報告：買 ${r.buy ? r.buy.join("～") : "–"}／賣 ${r.sell ? r.sell.join("～") : "–"}，現價 ${fmt(st.c)}）${held.has(r.code) ? "・你有持股" : ""}`, r.code]);
+  });
+  if (!items.length) return "";
+  return `<h2>提醒</h2><div class="card"><ul class="alerts">${items.map(([c, t, code]) => `<li><span class="badge ${c}">${c === "bull" ? "買進區／停損" : "賣出區／停利"}</span> <a href="#/stock/${code}">${esc(t)}</a></li>`).join("")}</ul></div>`;
+}
+
 /* ============================================================ 公司頁：同業比較 */
 function peersTable(code) {
   const me = S.byCode[code];
