@@ -180,6 +180,9 @@ def price_band(k, val, eps_rows):
     singles = [e[1] for e in eps_rows if e[1] is not None]
     eps4 = round(sum(singles[-4:]), 2) if len(singles) >= 4 else None
     pes = [v[1] for v in val[-250:] if v[1] and v[1] > 0]
+    if not eps4 and pes and val[-1][1] and val[-1][0] >= k[-1][0][:10] and val[-1][1] > 0:
+        # 沒有完整四季 EPS 時，用交易所公布的本益比反推近四季 EPS（收盤 ÷ 本益比）
+        eps4 = round(closes[-1] / val[-1][1], 2)
     if eps4 and eps4 > 0 and len(pes) >= 60:
         q = [round(pctl(pes, p), 2) for p in (0.2, 0.5, 0.8)]
         out["eps4"] = eps4
