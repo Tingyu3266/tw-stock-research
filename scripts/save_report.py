@@ -8,6 +8,7 @@ code 要跟 work/analysis_target.txt 指定的公司一致，rating 只能是 �
 """
 from __future__ import annotations
 
+import json
 import re
 import sys
 from pathlib import Path
@@ -35,6 +36,18 @@ def validate(text: str, target: str) -> list[str]:
         errs.append(f"rating 必須是 看多/中性/看空，實際為 {meta.get('rating')}")
     if len(body.strip()) < 300:
         errs.append("內文太短")
+    for i, block in enumerate(re.findall(r"```chart\s*\n(.*?)\n```", body, re.S), 1):
+        try:
+            spec = json.loads(block)
+        except json.JSONDecodeError as e:
+            errs.append(f"第 {i} 張圖 JSON 格式錯誤：{e}")
+            continue
+        if spec.get("type") not in ("pie", "bar", "hbar", "line", "timeline"):
+            errs.append(f"第 {i} 張圖 type 不支援：{spec.get('type')}")
+        if spec.get("type") != "timeline" and not str(spec.get("source", "")).strip():
+            errs.append(f"第 {i} 張圖缺少 source（資料來源）")
+        if spec.get("type") in ("pie", "hbar") and len(spec.get("labels", [])) != len(spec.get("values", [])):
+            errs.append(f"第 {i} 張圖 labels 與 values 數量不一致")
     return errs
 
 

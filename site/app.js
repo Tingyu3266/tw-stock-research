@@ -227,6 +227,9 @@ async function pageReport(parts) {
   const body = txt.replace(/^﻿?---[\s\S]*?\n---\s*\n?/, "");
   const html = DOMPurify.sanitize(marked.parse(body));
   const st = S.byCode[r.code];
+  let d = null;
+  try { d = S.detail[r.code] || (S.detail[r.code] = await getJSON(`data/s/${r.code}.json`)); } catch {}
+  const official = d ? officialCharts(d) : "";
   const others = S.reports.filter((x) => x.code === r.code && x.id !== r.id);
   app.innerHTML = `
     <p class="small"><a href="#/reports">← 分析報告</a></p>
@@ -234,8 +237,9 @@ async function pageReport(parts) {
       ${r.tags.map((t) => `<a class="tag" href="#/reports?tags=${encodeURIComponent(t)}">${esc(t)}</a>`).join("")}</div>
     <h1>${esc(r.title)}</h1>
     <p class="sub"><a href="#/stock/${esc(r.code)}"><b class="num">${esc(r.code)}</b> ${esc(r.name)}</a>　${esc(r.summary)}</p>
+    ${official}
     <div class="layout-2">
-      <article class="card md">${html}</article>
+      <article class="card md" id="md">${html}</article>
       <aside class="grid" style="align-content:start">
         ${st ? `<div class="card"><h3>${esc(st.name)} 最新數據</h3><table><tbody>
           <tr><td class="l">收盤（${esc(st.date)}）</td><td class="num">${fmt(st.c)} ${signed(st.pct, 2, "%")}</td></tr>
@@ -248,6 +252,25 @@ async function pageReport(parts) {
         ${others.length ? `<div class="card"><h3>同公司其他報告</h3>${others.map((o) => `<div class="small"><a href="#/report/${encodeURIComponent(o.id)}">${esc(o.date)} ${esc(o.title)}</a></div>`).join("")}</div>` : ""}
       </aside>
     </div>`;
+  Charts.hydrate($("#md"));
+}
+
+/* 報告頁上方的官方數據圖（證交所／櫃買中心資料，自動產生） */
+function officialCharts(d) {
+  const out = [];
+  const k = d.k.slice(-250);
+  if (k.length > 20) {
+    const monthly = [];
+    k.forEach((x) => { const m = x[0].slice(0, 7); const last = monthly[monthly.length - 1]; if (last && last[0] === m) last[1] = x[4]; else monthly.push([m, x[4]]); });
+    out.push(Charts.render({ type: "line", title: "近一年股價（月底收盤）", unit: "元", labels: monthly.map((x) => x[0].slice(2).replace("-", "/")), values: monthly.map((x) => x[1]), source: `證交所／櫃買中心，至 ${k[k.length - 1][0]}` }));
+  }
+  const rev = d.rev.slice(-13);
+  if (rev.length > 2) out.push(Charts.render({ type: "bar", title: "月營收", unit: "億元", labels: rev.map((x) => x[0].slice(2).replace("-", "/")), values: rev.map((x) => +((x[1] || 0) / 1e5).toFixed(1)), source: `公開資訊觀測站，至 ${rev[rev.length - 1][0]}` }));
+  const yoy = rev.filter((x) => isNum(x[3]));
+  if (yoy.length > 2) out.push(Charts.render({ type: "bar", signed: true, title: "月營收年增率", unit: "%", labels: yoy.map((x) => x[0].slice(2).replace("-", "/")), values: yoy.map((x) => +x[3].toFixed(1)), source: "公開資訊觀測站" }));
+  const eps = d.eps.filter((x) => isNum(x[1])).slice(-8);
+  if (eps.length > 2) out.push(Charts.render({ type: "bar", title: "單季 EPS", unit: "元", labels: eps.map((x) => x[0].slice(2)), values: eps.map((x) => x[1]), source: "公開資訊觀測站（單季＝累計相減）" }));
+  return out.length ? `<h2>官方數據速覽</h2><div class="official">${out.join("")}</div>` : "";
 }
 
 /* ------------------------------------------------------------ 選股篩選 */

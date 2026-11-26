@@ -128,36 +128,20 @@ def build_packet(code: str, st: dict, d: dict) -> str:
     return "\n\n".join(parts)
 
 
-PROMPT = """你是台股研究員。今天是 {date}。請根據下方「資料包」分析 {name}（{code}）。
+def routine_sections() -> str:
+    """從 ROUTINE.md 取出「研究重點」與「寫報告格式」，讓提示詞只有一個來源。"""
+    txt = (ROOT / "ROUTINE.md").read_text(encoding="utf-8")
+    m = re.search(r"(## 步驟二：研究.*?)(?=## 步驟四)", txt, re.S)
+    return m.group(1).strip() if m else ""
 
-只輸出一份 Markdown，第一段必須是以下 front matter（三條減號包住），前後不要加任何說明文字：
 
----
-code: "{code}"
-name: {name}
-date: {date}
-title: 一句話標題（20 字內）
-rating: 看多 或 中性 或 看空（三選一，只寫兩個字）
-tags: [標籤1, 標籤2, 標籤3]
-summary: 兩句話摘要
----
+PROMPT = """你是台股產業研究員。今天是 {date}。請研究 {name}（{code}），寫一篇讓一般人 5 分鐘看懂這家公司的報告。
+重點是商業模式、產品在做什麼、用在哪裡、未來發展方向，用白話解釋，能用圖表就用圖表。
+只輸出報告本身（第一行就是 ---），前後不要加任何說明文字。front matter 的 code 填 "{code}"、name 填 {name}、date 填 {date}。
 
-接著依序寫這些段落：
-## 公司概況
-## 近期營運與財務
-## 籌碼觀察
-## 技術面
-## 產業與競爭
-## 風險
-## 結論
+{sections}
 
-規則：
-- 使用繁體中文，約 800～1500 字。
-- 數字只能引用資料包裡的數據，並註明期間；資料包沒有的數字不要編造，需要時寫「待確認」。
-- 產業與競爭可用你的一般知識，但不要寫具體的最新新聞或你無法確定的事件。
-- 最後一行固定寫：「本文由 AI 依公開資料自動產生，為個人研究紀錄，非投資建議。」
-
-# 資料包（來源：證交所、櫃買中心、集保結算所公開資料）
+# 資料包（官方數據，來源：證交所、櫃買中心、集保結算所公開資料）
 
 {packet}
 """
@@ -174,7 +158,7 @@ def main():
     st = dict(zip(index["fields"], next(r for r in index["rows"] if r[0] == code)))
     d = read_json(SITE / "data" / "s" / f"{code}.json")
     today = dt.datetime.now(TZ).date().isoformat()
-    prompt = PROMPT.format(date=today, code=code, name=st["name"], packet=build_packet(code, st, d))
+    prompt = PROMPT.format(date=today, code=code, name=st["name"], sections=routine_sections(), packet=build_packet(code, st, d))
     WORK.mkdir(exist_ok=True)
     (WORK / "analysis_prompt.md").write_text(prompt, encoding="utf-8")
     target = f"reports/{today}-{code}.md"
