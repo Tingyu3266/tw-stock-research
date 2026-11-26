@@ -58,10 +58,21 @@
   /* ---------- 橫條 */
   function hbar(spec) {
     const ss = seriesOf(spec), labels = spec.labels || [];
-    const vals = ss[0].values, max = niceMax(Math.max(...vals.filter(isFinite), 0));
+    const vals = ss[0].values, fin = vals.filter(isFinite);
+    const hasNeg = fin.some((v) => v < 0);
+    const max = niceMax(Math.max(...fin.map(Math.abs), 0));
     return `<div class="cl-hbar">${labels.map((l, i) => {
-      const v = vals[i], w = isFinite(v) && v > 0 ? (v / max) * 100 : 0;
-      return `<div class="cl-row" title="${esc(l)}：${nf(v)}${esc(spec.unit || "")}"><span class="cl-lab">${esc(l)}</span><span class="cl-track"><span class="cl-fill" style="width:${w}%;background:${S(0)}"></span></span><b class="num">${nf(v)}${esc(spec.unit || "")}</b></div>`;
+      const v = vals[i];
+      let bar;
+      if (!hasNeg) {
+        const w = isFinite(v) && v > 0 ? (v / max) * 100 : 0;
+        bar = `<span class="cl-fill" style="width:${w}%;background:${S(0)}"></span>`;
+      } else {
+        // 有負值：以中線為 0，正值往右（紅）、負值往左（綠）
+        const w = isFinite(v) ? (Math.abs(v) / max) * 50 : 0;
+        bar = `<span class="cl-mid"></span><span class="cl-fill" style="position:absolute;top:0;${v >= 0 ? "left:50%" : "right:50%"};width:${w}%;background:${v >= 0 ? "var(--up)" : "var(--down)"};border-radius:${v >= 0 ? "0 4px 4px 0" : "4px 0 0 4px"}"></span>`;
+      }
+      return `<div class="cl-row" title="${esc(l)}：${nf(v)}${esc(spec.unit || "")}"><span class="cl-lab">${esc(l)}</span><span class="cl-track"${hasNeg ? ' style="position:relative"' : ""}>${bar}</span><b class="num">${nf(v)}${esc(spec.unit || "")}</b></div>`;
     }).join("")}</div>`;
   }
 

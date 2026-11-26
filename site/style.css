@@ -154,6 +154,7 @@ figure.cl figcaption { font-weight: 600; margin-bottom: 8px; }
 .cl-hbar .cl-row { display: grid; grid-template-columns: minmax(80px, 34%) 1fr auto; gap: 10px; align-items: center; padding: 4px 0; font-size: 14px; }
 .cl-track { height: 12px; background: var(--panel2); border-radius: 6px; overflow: hidden; }
 .cl-fill { display: block; height: 100%; border-radius: 0 4px 4px 0; }
+.cl-mid { position: absolute; left: 50%; top: -2px; bottom: -2px; width: 1px; background: var(--muted); }
 .cl-tl { list-style: none; margin: 0; padding: 0 0 0 14px; border-left: 2px solid var(--accent); }
 .cl-tl li { position: relative; padding: 4px 0 12px 12px; }
 .cl-tl li::before { content: ""; position: absolute; left: -21px; top: 9px; width: 10px; height: 10px; border-radius: 50%; background: var(--accent); border: 2px solid var(--panel); }
