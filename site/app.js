@@ -93,7 +93,7 @@ function route() {
   const page = parts[0] || "home";
   $$("nav.main a").forEach((a) => a.classList.toggle("active", a.dataset.nav === (page === "report" ? "reports" : page === "stock" ? "" : page)));
   window.scrollTo(0, 0);
-  ({ home: pageHome, reports: pageReports, report: pageReport, screener: pageScreener, groups: pageGroups, stock: pageStock, portfolio: pagePortfolio, compare: pageCompare, briefs: pageBriefs, brief: pageBrief }[page] || pageHome)(parts, q);
+  ({ home: pageHome, reports: pageReports, report: pageReport, screener: pageScreener, groups: pageGroups, stock: pageStock, portfolio: pagePortfolio, compare: pageCompare, briefs: pageBriefs, brief: pageBrief, track: pageTrack }[page] || pageHome)(parts, q);
 }
 
 /* ------------------------------------------------------------ 全站搜尋 */
@@ -144,9 +144,11 @@ function repCard(r, q = "") {
 
 /* ------------------------------------------------------------ 首頁 */
 function pageHome() {
-  const rows = S.rows.filter((r) => isNum(r.pct));
+  const isStock = (r) => r.mkt !== "指數" && !r.ind.includes("ETF");
+  const rows = S.rows.filter((r) => isNum(r.pct) && isStock(r));
+  const tx = S.byCode.TAIEX;
   const up = rows.filter((r) => r.pct > 0).length, down = rows.filter((r) => r.pct < 0).length;
-  const topBy = (f, n = 8, asc = false) => [...S.rows].filter((r) => isNum(r[f]) && r.v > 500).sort((a, b) => (asc ? a[f] - b[f] : b[f] - a[f])).slice(0, n);
+  const topBy = (f, n = 8, asc = false) => [...S.rows].filter((r) => isNum(r[f]) && r.v > 500 && isStock(r)).sort((a, b) => (asc ? a[f] - b[f] : b[f] - a[f])).slice(0, n);
   const mini = (title, list, f, fmtf) => `<div class="card"><h3>${title}</h3><table><tbody>${list.map((r) =>
     `<tr><td class="l"><a class="code" href="#/stock/${r.code}">${r.code}</a> ${esc(r.name)}</td><td>${fmtf(r[f])}</td></tr>`).join("")}</tbody></table></div>`;
   app.innerHTML = `
@@ -156,7 +158,7 @@ function pageHome() {
     <div class="grid cols-4">
       ${homePortfolioCard()}
       <div class="card stat"><div class="label">上漲 / 下跌家數</div><div class="value"><span class="up">${up}</span> / <span class="down">${down}</span></div><span class="small muted">共 ${rows.length} 檔有成交</span></div>
-      <div class="card stat"><div class="label">月營收資料月份</div><div class="value">${esc(S.meta.revenue || "–")}</div><a class="small" href="#/screener?sort=revYoY">營收年增排行 →</a></div>
+      ${tx ? `<a class="card stat" href="#/stock/TAIEX" style="color:inherit;text-decoration:none"><div class="label">加權指數（${esc(tx.date)}）</div><div class="value ${cls(tx.pct)}">${fmt(tx.c)}</div><div class="small">${signed(tx.chg)}（${signed(tx.pct, 2, "%")}）・一年 ${signed(tx.r240, 1, "%")}</div></a>` : ""}
       <div class="card stat"><div class="label">集保股權分散</div><div class="value">${esc(S.meta.tdcc || "–")}</div><a class="small" href="#/screener?sort=b1000w">大戶增持排行 →</a></div>
     </div>
     ${homeAlerts()}
@@ -239,7 +241,7 @@ async function renderAnalysis(el, code, d, rid) {
   const r = reps.find((x) => x.id === rid) || reps[0];
   const band = bandBox(d);
   if (!r) {
-    el.innerHTML = `<div class="card empty">還沒有這家公司的分析。<br><span class="small">排程每個交易日 20:00 依研究清單寫一家；想優先研究，把代號寫進 <code>analysis_queue.txt</code> 最上面。</span></div>${band}`;
+    el.innerHTML = `<div class="card empty">還沒有這家公司的分析。<br><span class="small">排程每個交易日 20:00 依研究清單寫一家；想優先研究，按上方「🔬 請 Claude 研究這檔」。</span></div>${band}`;
     return;
   }
   el.innerHTML = `<div class="empty">載入分析…</div>`;
@@ -253,6 +255,7 @@ async function renderAnalysis(el, code, d, rid) {
       ${r.tags.map((t) => `<a class="tag" href="#/reports?tags=${encodeURIComponent(t)}">${esc(t)}</a>`).join("")}
       ${others.length ? `<span>・其他日期：${others.map((o) => `<a href="#/stock/${code}?r=${encodeURIComponent(o.id)}">${esc(o.date)}</a>`).join("、")}</span>` : ""}</div>
     ${r.summary ? `<p class="card" style="margin:0 0 14px">${esc(r.summary)}</p>` : ""}
+    ${perfStrip(r)}
     <article class="card md" id="md">${html}</article>
     ${band}`;
   Charts.hydrate($("#md"));
@@ -378,9 +381,11 @@ function bandBox(d) {
       <div class="g-t" style="left:${x(lo)}%">${fmt(lo, 0)}</div><div class="g-t" style="left:${x(mid)}%">${fmt(mid, 0)}</div><div class="g-t" style="left:${x(hi)}%">${fmt(hi, 0)}</div>
       <div class="g-now" style="left:${x(b.close)}%"><span>現價 ${fmt(b.close, 0)}</span></div></div>
       <div class="g-leg small"><span>便宜區</span><span>合理區</span><span>昂貴區</span></div>`;
-    rows.push(["便宜價（近一年本益比 20 百分位 × 近四季 EPS）", `${fmt(lo)}（${fmt(b.pe[0])} 倍）`]);
+    const yrs = (b.peDays / 250).toFixed(1).replace(/\.0$/, "");
+    rows.push([`便宜價（近 ${yrs} 年本益比 20 百分位 × 近四季 EPS）`, `${fmt(lo)}（${fmt(b.pe[0])} 倍）`]);
     rows.push(["合理價（中位數）", `${fmt(mid)}（${fmt(b.pe[1])} 倍）`]);
     rows.push(["昂貴價（80 百分位）", `${fmt(hi)}（${fmt(b.pe[2])} 倍）`]);
+    if (b.pe1) rows.push(["參考：只看近 1 年的本益比區間", `${fmt(b.pe1[0])}～${fmt(b.pe1[2])} 倍（中位數 ${fmt(b.pe1[1])}）`]);
   }
   const ma = b.ma || {};
   [["20", "月線 MA20"], ["60", "季線 MA60"], ["120", "半年線 MA120"], ["240", "年線 MA240"], ["300", "MA300"]].forEach(([k, n]) => { if (ma[k]) rows.push([n, `${fmt(ma[k])}（現價${b.close >= ma[k] ? "在上方" : "在下方"}）`]); });
@@ -672,6 +677,7 @@ async function pageStock(parts, q) {
       <button class="star ${inWL ? "on" : ""}" id="star">${inWL ? "★ 已加入自選" : "☆ 加入自選"}</button>
       <a class="star" href="#/portfolio?add=${code}">＋ 記一筆交易</a>
       <a class="star" href="#/compare?c=${code}">⇄ 比較</a>
+      ${/^\d{4}$/.test(code) && !info.ind.includes("ETF") ? `<a class="star" target="_blank" rel="noopener" href="${researchRequestUrl(code, st.name)}" title="在 GitHub 建立研究請求，隔天 20:00 的排程會優先研究（需登入 GitHub）">🔬 請 Claude 研究這檔</a>` : ""}
     </div>
     <div class="stock-head"><span class="px ${cls(st.pct)}">${fmt(st.c)}</span><span>${signed(st.chg)} (${signed(st.pct, 2, "%")})</span>
       <span class="muted small">${esc(st.date)}　成交 ${fint(st.v)} 張</span></div>

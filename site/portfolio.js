@@ -328,7 +328,7 @@ async function pageCompare(_, q) {
 /* ============================================================ 首頁產業熱力圖 */
 function industryHeatmap() {
   const g = {};
-  S.rows.forEach((r) => { if (isNum(r.pct) && r.v) (g[r.ind] = g[r.ind] || []).push(r); });
+  S.rows.forEach((r) => { if (isNum(r.pct) && r.v && r.mkt !== "指數" && !r.ind.includes("ETF")) (g[r.ind] = g[r.ind] || []).push(r); });
   const list = Object.entries(g).filter(([, rs]) => rs.length >= 3).map(([ind, rs]) => {
     const tv = rs.reduce((s, r) => s + r.c * r.v, 0);
     const avg = rs.reduce((s, r) => s + r.pct * r.c * r.v, 0) / (tv || 1); // 成交值加權
@@ -345,6 +345,48 @@ function homePortfolioCard() {
   const H = pfHoldings(p);
   const tot = H.list.reduce((s, x) => s + x.mv, 0), cost = H.list.reduce((s, x) => s + x.cost, 0), today = H.list.reduce((s, x) => s + x.today, 0);
   return `<div class="card stat"><div class="label">我的持股市值（${H.list.length} 檔）</div><div class="value">${fint(tot)}</div><div class="small">今日 ${signed(today, 0)}・未實現 ${signed(tot - cost, 0)} <a href="#/portfolio">→</a></div></div>`;
+}
+
+/* ============================================================ 研究請求（開 GitHub issue） */
+const REPO = "Tingyu3266/tw-stock-research";
+function researchRequestUrl(code, name) {
+  const title = `研究請求：${code} ${name}`;
+  const body = `請 Claude 研究 ${code} ${name}。\n\n（由網站「請 Claude 研究這檔」按鈕建立；每日 20:00 的排程會優先處理，完成後自動關閉這個 issue。這個 repo 是公開的，請不要在這裡寫個人資訊。）`;
+  return `https://github.com/${REPO}/issues/new?labels=research&title=${encodeURIComponent(title)}&body=${encodeURIComponent(body)}`;
+}
+
+/* ============================================================ 研究績效 */
+const pct = (v) => (isNum(v) ? signed(v, 1, "%") : '<span class="muted">–</span>');
+function perfStrip(r) {
+  const p = r.perf;
+  if (!p) return "";
+  const cell = (k, v, t) => `<div><span class="k">${k}</span><span class="v">${pct(v)}</span>${isNum(t) ? `<span class="muted small">大盤 ${pct(t)}</span>` : ""}</div>`;
+  return `<div class="card perf-strip"><b>這篇報告之後的表現</b>（基準：${esc(p.baseDate)} 收盤 ${fmt(p.base)}，已過 ${p.days} 個交易日）
+    <div class="kinfo">${cell("1 週", p.r5, p.t5)}${cell("1 個月", p.r20, p.t20)}${cell("3 個月", p.r60, p.t60)}${cell("至今", p.now, p.tnow)}${cell("期間最高", p.maxUp)}${cell("期間最低", p.maxDn)}
+    ${p.hitBuy != null ? `<div><span class="k">碰到買進區</span><span class="v">${p.hitBuy ? "✅ 有" : "還沒有"}</span></div>` : ""}${p.hitSell != null ? `<div><span class="k">碰到賣出區</span><span class="v">${p.hitSell ? "✅ 有" : "還沒有"}</span></div>` : ""}</div></div>`;
+}
+function pageTrack() {
+  const rs = S.reports.filter((r) => r.perf);
+  const avg = (f) => { const xs = rs.map((r) => r.perf[f]).filter(isNum); return xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : null; };
+  const hit = (rating, f) => { const xs = rs.filter((r) => r.rating === rating && isNum(r.perf[f])); if (!xs.length) return null; const ok = xs.filter((r) => (rating === "看空" ? r.perf[f] < 0 : r.perf[f] > 0)).length; return [ok, xs.length]; };
+  const hitTxt = (h) => (h ? `${h[0]} / ${h[1]}（${Math.round((h[0] / h[1]) * 100)}%）` : "–");
+  const tile = (l, v, s = "") => `<div class="card stat"><div class="label">${l}</div><div class="value">${v}</div>${s ? `<div class="small muted">${s}</div>` : ""}</div>`;
+  app.innerHTML = `<h1>研究績效</h1>
+    <p class="sub">每篇報告發布後的實際股價表現，用來檢驗分析可不可信。以發布日（或之後第一個交易日）收盤價為基準，並和同期加權指數比較。資料每天自動更新。</p>
+    <div class="grid cols-4">
+      ${tile("已追蹤報告", rs.length, "需要至少 1 個交易日才開始計算")}
+      ${tile("平均 1 個月報酬", pct(avg("r20")), `同期大盤 ${pct(avg("t20"))}`)}
+      ${tile("「看多」準確率（1 個月）", hitTxt(hit("看多", "r20")), "1 個月後股價高於發布日")}
+      ${tile("「看空」準確率（1 個月）", hitTxt(hit("看空", "r20")), "1 個月後股價低於發布日")}
+    </div>
+    <h2>每篇報告</h2>
+    <div class="tbl-wrap"><table><thead><tr><th class="l">日期</th><th class="l">股票</th><th>評等</th><th>基準價</th><th>1 週</th><th>1 個月</th><th>3 個月</th><th>至今</th><th>同期大盤</th><th>超額報酬</th><th>買進區</th><th>賣出區</th></tr></thead>
+    <tbody>${rs.map((r) => { const p = r.perf, ex = isNum(p.now) && isNum(p.tnow) ? p.now - p.tnow : null; return `<tr>
+      <td class="l num">${esc(r.date)}</td><td class="l"><a href="#/stock/${r.code}?r=${encodeURIComponent(r.id)}">${esc(r.code)} ${esc(r.name)}</a></td>
+      <td><span class="badge ${ratingCls(r.rating)}">${esc(r.rating)}</span></td><td class="num">${fmt(p.base)}</td>
+      <td>${pct(p.r5)}</td><td>${pct(p.r20)}</td><td>${pct(p.r60)}</td><td>${pct(p.now)}</td><td>${pct(p.tnow)}</td><td>${pct(ex)}</td>
+      <td>${p.hitBuy == null ? "–" : p.hitBuy ? "✅" : "—"}</td><td>${p.hitSell == null ? "–" : p.hitSell ? "✅" : "—"}</td></tr>`; }).join("") || `<tr><td colspan="12" class="empty">報告發布後隔一個交易日就會開始追蹤</td></tr>`}</tbody></table></div>
+    <p class="muted small">「準確率」只看方向，不代表投資建議的好壞；樣本少時參考價值有限。</p>`;
 }
 
 /* ============================================================ 盤前快報 */

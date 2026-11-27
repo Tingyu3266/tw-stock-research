@@ -196,17 +196,22 @@ def price_band(k, val, eps_rows):
     }
     singles = [e[1] for e in eps_rows if e[1] is not None]
     eps4 = round(sum(singles[-4:]), 2) if len(singles) >= 4 else None
-    pes = [v[1] for v in val[-250:] if v[1] and v[1] > 0]
-    if not eps4 and pes and val[-1][1] and val[-1][0] >= k[-1][0][:10] and val[-1][1] > 0:
-        # 沒有完整四季 EPS 時，用交易所公布的本益比反推近四季 EPS（收盤 ÷ 本益比）
-        eps4 = round(closes[-1] / val[-1][1], 2)
-    if eps4 and eps4 > 0 and len(pes) >= 60:
+    # 本益比區間：用最長約 3 年（750 個交易日），比 1 年更不受單一年度獲利跳動影響
+    pes = [v[1] for v in val[-750:] if v[1] and v[1] > 0]
+    pes1 = [v[1] for v in val[-250:] if v[1] and v[1] > 0]
+    if val and val[-1][1] and val[-1][1] > 0 and val[-1][0] >= k[-1][0][:10]:
+        # 以交易所公布的本益比反推近四季 EPS（收盤 ÷ 本益比），與本益比區間同一基準
+        eps_ex = round(closes[-1] / val[-1][1], 2)
+        eps4 = eps4 or eps_ex
+    if eps4 and eps4 > 0 and len(pes) >= 120:
         q = [round(pctl(pes, p), 2) for p in (0.2, 0.5, 0.8)]
         out["eps4"] = eps4
         out["pe"] = q
         out["peNow"] = pes[-1]
         out["price"] = [round(eps4 * x, 1) for x in q]
         out["peDays"] = len(pes)
+        if len(pes1) >= 60:
+            out["pe1"] = [round(pctl(pes1, p), 2) for p in (0.2, 0.5, 0.8)]
     return out
 
 
@@ -250,8 +255,52 @@ def ret_n(closes, n):
     return round((closes[-1] / closes[-1 - n] - 1) * 100, 2) if len(closes) > n else None
 
 
+def add_performance(reports, perf_k):
+    """研究績效：報告發布後 5/20/60 個交易日與至今的報酬、相對大盤、是否碰到買賣區。"""
+    tx = {x[0]: x[4] for x in perf_k.get("TAIEX", [])}
+    for r in reports:
+        k = perf_k.get(r["code"]) or []
+        idx = next((i for i, x in enumerate(k) if x[0] >= r["date"]), None)
+        if idx is None:
+            r["perf"] = None
+            continue
+        # 報告多在收盤後寫，以發布日（或之後第一個交易日）收盤為基準
+        base = k[idx][4]
+        after = k[idx + 1:]
+
+        def ret(n):
+            return round((after[n - 1][4] / base - 1) * 100, 2) if len(after) >= n else None
+
+        def tret(n):
+            if len(after) < n or k[idx][0] not in tx or after[n - 1][0] not in tx:
+                return None
+            return round((tx[after[n - 1][0]] / tx[k[idx][0]] - 1) * 100, 2)
+
+        hi = max((x[2] or x[4] for x in after), default=None)
+        lo = min((x[3] or x[4] for x in after), default=None)
+        p = {"base": base, "baseDate": k[idx][0], "days": len(after),
+             "r5": ret(5), "r20": ret(20), "r60": ret(60),
+             "t5": tret(5), "t20": tret(20), "t60": tret(60),
+             "now": round((k[-1][4] / base - 1) * 100, 2) if after else None,
+             "tnow": tret(len(after)) if after else None,
+             "maxUp": round((hi / base - 1) * 100, 2) if hi else None,
+             "maxDn": round((lo / base - 1) * 100, 2) if lo else None}
+        if r.get("buy") and lo is not None:
+            p["hitBuy"] = lo <= r["buy"][1]
+        if r.get("sell") and hi is not None:
+            p["hitSell"] = hi >= r["sell"][0]
+        r["perf"] = p
+    write_json(SITE / "data" / "reports.json", reports)
+
+
 def main():
     companies = read_json(DATA / "companies.json", {})
+    # ETF 與加權指數也一起收錄
+    for code, e in read_json(DATA / "etfs.json", {}).items():
+        if code not in companies:
+            kind = "債券ETF" if code.endswith("B") else "槓桿反向ETF" if code[-1] in "LRU" else "主動式ETF" if code.endswith("A") else "ETF"
+            companies[code] = {"n": e["n"], "full": e["n"], "mkt": e["mkt"], "ind": kind}
+    companies["TAIEX"] = {"n": "加權指數", "full": "臺灣證券交易所發行量加權股價指數", "mkt": "指數", "ind": "指數"}
     codes = sorted(companies)
     reports = build_reports(companies)
     build_briefs()
@@ -281,18 +330,23 @@ def main():
                     "volR", "bull", "hiGap", "zone", "ma120", "r60", "r240"]
     index_rows = []
     latest_date = ""
+    perf_k: dict[str, list] = {}
 
     for code in codes:
         info = companies[code]
         ser = series[code]
-        dates = sorted(ser)[-KEEP_DAYS:]
+        all_dates = sorted(ser)
+        dates = all_dates[-KEEP_DAYS:]
         rows = [ser[d] for d in dates]
         bf = read_json(DATA / "backfill" / f"{code}.json", {}) or {}
 
         k = [[d] + [r[IDX[f]] for f in ("o", "h", "l", "c", "v")] for d, r in zip(dates, rows) if r[IDX["c"]]]
         chip = [[d] + [r[IDX[f]] for f in ("fi", "it", "dl", "mb", "ss")] for d, r in zip(dates, rows)
                 if any(r[IDX[f]] is not None for f in ("fi", "it", "dl", "mb"))]
-        val = [[d, r[IDX["pe"]], r[IDX["dy"]], r[IDX["pb"]]] for d, r in zip(dates, rows) if r[IDX["pb"]] is not None]
+        val_all = [[d, ser[d][IDX["pe"]], ser[d][IDX["dy"]], ser[d][IDX["pb"]]] for d in all_dates[-760:] if ser[d][IDX["pb"]] is not None]
+        val = val_all[-KEEP_DAYS:]
+        if code in rep_by_code or code == "TAIEX":
+            perf_k[code] = k
 
         rev = {}
         for ym, v in bf.get("revenue", {}).items():
@@ -305,7 +359,7 @@ def main():
         eps_rows = build_eps(code, {q: eps_all[q].get(code) for q in eps_qs if code in eps_all[q]}, bf.get("eps", {}))
         div = dividends.get(code, [])
         td = [[d] + tdcc[d][code] for d in tdcc_dates if code in tdcc[d]]
-        band = price_band(k, val, eps_rows)
+        band = price_band(k, val_all, eps_rows)
 
         write_json(s_dir / f"{code}.json", {
             "code": code, "info": info, "k": k, "chip": chip, "val": val, "rev": rev_rows,
@@ -359,6 +413,7 @@ def main():
         ])
 
     write_json(SITE / "data" / "index.json", {"fields": index_fields, "rows": index_rows})
+    add_performance(reports, perf_k)
     groups = read_json(ROOT / "groups.json", {"groups": []})
     write_json(SITE / "data" / "groups.json", groups.get("groups", []))
     write_json(SITE / "data" / "meta.json", {

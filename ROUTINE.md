@@ -17,6 +17,15 @@
 
 做完繼續步驟一。
 
+## 步驟零之二：收網站上的研究請求
+
+網站公司頁有「請 Claude 研究這檔」按鈕，會在 GitHub 開一個帶 `research` 標籤的 issue（標題含 4 碼代號）。
+1. `gh issue list --label research --state open --json number,title --limit 20`
+2. 從每個標題取出 4 碼股票代號，依 issue 編號由小到大，**附加**到 `request_queue.txt`（一行一個代號，後面加 `# issue #編號`；已在檔案裡的就不重複）
+3. 做完今天的報告後（步驟四推送成功後），若今天研究的代號來自 `request_queue.txt`：把那一行刪掉、一起 commit，並對對應 issue 執行
+   `gh issue close 編號 --comment "已完成研究：https://tingyu3266.github.io/tw-stock-research/#/stock/代號"`
+4. 若 `gh` 無法使用就略過這一步，不影響其他步驟
+
 ## 步驟一：準備
 
 1. `git checkout main && git pull`
@@ -130,7 +139,7 @@ sell: [賣出區間下緣, 賣出區間上緣]   （同上，例如 [4300, 4700]
 1. `python3 scripts/save_report.py work/analysis_output.md`；若顯示「格式不合格」，依訊息修正後重跑，最多 3 次
 2. 只提交報告：
    ```
-   git add reports/
+   git add reports/ request_queue.txt
    git commit -m "每日研究 $(TZ=Asia/Taipei date +%F)"
    git push origin main
    ```

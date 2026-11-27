@@ -86,6 +86,26 @@ def is_stock_code(code: str) -> bool:
     return len(code) == 4 and code.isdigit()
 
 
+def is_etf(code: str) -> bool:
+    """ETF：00 開頭，4～6 碼（例：0050、00878、00981A、00679B）"""
+    return code.startswith("00") and 4 <= len(code) <= 6 and code[:4].isdigit()
+
+
+def is_security(code: str) -> bool:
+    """網站收錄的證券：一般股票＋ETF"""
+    return is_stock_code(code) or is_etf(code)
+
+
+def add_etf_names(names: dict[str, tuple[str, str]]):
+    """把 ETF 名稱與市場別記到 data/etfs.json"""
+    path = DATA / "etfs.json"
+    cur = read_json(path, {})
+    for code, (n, mkt) in names.items():
+        if is_etf(code) and n:
+            cur[code] = {"n": n.strip(), "mkt": mkt}
+    write_json(path, cur)
+
+
 def read_json(path: Path, default=None):
     try:
         return json.loads(Path(path).read_text(encoding="utf-8"))

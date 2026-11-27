@@ -20,7 +20,7 @@ import csv
 import io
 import time
 
-from common import (DATA, INDUSTRY, get_json, http_get, is_stock_code, log, num,
+from common import (DATA, INDUSTRY, get_json, http_get, is_stock_code, is_security, add_etf_names, log, num,
                     read_json, roc_to_iso, write_json)
 
 TWSE = "https://openapi.twse.com.tw/v1"
@@ -58,9 +58,10 @@ def fetch_prices():
     # 上市
     q = get_json(f"{TWSE}/exchangeReport/STOCK_DAY_ALL")
     rows, date = {}, None
+    add_etf_names({r["Code"].strip(): (r["Name"], "上市") for r in q})
     for r in q:
         code = r["Code"].strip()
-        if not is_stock_code(code):
+        if not is_security(code):
             continue
         date = roc_to_iso(r["Date"])
         rows[code] = {"o": num(r["OpeningPrice"]), "h": num(r["HighestPrice"]), "l": num(r["LowestPrice"]),
@@ -76,9 +77,10 @@ def fetch_prices():
     # 上櫃
     q = get_json(f"{TPEX}/tpex_mainboard_daily_close_quotes")
     rows, date = {}, None
+    add_etf_names({r["SecuritiesCompanyCode"].strip(): (r["CompanyName"], "上櫃") for r in q})
     for r in q:
         code = r["SecuritiesCompanyCode"].strip()
-        if not is_stock_code(code):
+        if not is_security(code):
             continue
         date = roc_to_iso(r["Date"])
         rows[code] = {"o": num(r["Open"]), "h": num(r["High"]), "l": num(r["Low"]),
@@ -104,7 +106,8 @@ def fetch_prices():
 
 def twse_has_prices(date: str) -> bool:
     snap = read_json(DATA / "daily" / f"{date}.json", {})
-    return bool(snap) and snap.get("rows", {}).get("2330", [None] * 5)[IDX["c"]] is not None
+    rows = snap.get("rows", {}) if snap else {}
+    return rows.get("2330", [None] * 5)[IDX["c"]] is not None and "TAIEX" in rows
 
 
 def fetch_twse_mi_index(date: str) -> int:
@@ -117,15 +120,24 @@ def fetch_twse_mi_index(date: str) -> int:
         raise RuntimeError("MI_INDEX 格式改變")
     f = {k: i for i, k in enumerate(table["fields"])}
     rows = {}
+    add_etf_names({r[0].strip(): (r[1], "上市") for r in table["data"]})
     for r in table["data"]:
         code = r[0].strip()
-        if not is_stock_code(code):
+        if not is_security(code):
             continue
         diff = num(r[f["漲跌價差"]], 0.0)
         sign = -1 if "-" in r[f["漲跌(+/-)"]] else 1
         rows[code] = {"o": num(r[f["開盤價"]]), "h": num(r[f["最高價"]]), "l": num(r[f["最低價"]]),
                       "c": num(r[f["收盤價"]]), "v": lots(r[f["成交股數"]]), "chg": sign * diff,
                       "pe": num(r[f["本益比"]])}
+    # 加權指數（存成代號 TAIEX，只有收盤與漲跌點數）
+    for t in d.get("tables", []):
+        if t.get("fields") and t["fields"][0] == "指數":
+            for r in t["data"]:
+                if r[0].strip() == "發行量加權股價指數":
+                    c = num(r[1]); pts = num(r[3], 0.0)
+                    rows["TAIEX"] = {"o": c, "h": c, "l": c, "c": c, "chg": (-1 if "-" in r[2] else 1) * pts}
+            break
     time.sleep(3)
     return upsert_daily(date, rows)
 
@@ -142,7 +154,7 @@ def fetch_chips(dates: set[str]):
         rows = {}
         for r in d["data"]:
             code = r[0].strip()
-            if is_stock_code(code):
+            if is_security(code):
                 rows[code] = {"fi": lots(r[4]), "it": lots(r[10]), "dl": lots(r[11])}
         log("上市三大法人", date, upsert_daily(date, rows), "檔")
         time.sleep(3)  # 證交所網站有頻率限制
@@ -164,7 +176,7 @@ def fetch_chips(dates: set[str]):
         rows = {}
         for r in table["data"]:
             code = r[0].strip()
-            if is_stock_code(code):
+            if is_security(code):
                 rows[code] = {"mb": num(r[6]), "ss": num(r[12])}
         log("上市融資券", date, upsert_daily(date, rows), "檔", f"({len(f)} 欄)")
         time.sleep(3)
@@ -173,7 +185,7 @@ def fetch_chips(dates: set[str]):
     rows, date = {}, None
     for r in get_json(f"{TPEX}/tpex_3insti_daily_trading"):
         code = r["SecuritiesCompanyCode"].strip()
-        if not is_stock_code(code):
+        if not is_security(code):
             continue
         date = roc_to_iso(r["Date"])
         rows[code] = {"fi": lots(r["Foreign Investors include Mainland Area Investors (Foreign Dealers excluded)-Difference"]),
@@ -186,7 +198,7 @@ def fetch_chips(dates: set[str]):
     rows, date = {}, None
     for r in get_json(f"{TPEX}/tpex_mainboard_margin_balance"):
         code = r["SecuritiesCompanyCode"].strip()
-        if not is_stock_code(code):
+        if not is_security(code):
             continue
         date = roc_to_iso(r["Date"])
         rows[code] = {"mb": num(r["MarginPurchaseBalance"]), "ss": num(r["ShortSaleBalance"])}

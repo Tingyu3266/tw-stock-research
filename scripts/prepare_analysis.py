@@ -42,6 +42,14 @@ def pick(index: dict) -> tuple[str, str]:
     valid = {r[0] for r in index["rows"]}
     cutoff = (today - dt.timedelta(days=60)).isoformat()
 
+    # 使用者從網站按「請 Claude 研究這檔」送來的請求，最優先（不論之前是否研究過）
+    rq = ROOT / "request_queue.txt"
+    if rq.exists():
+        for ln in rq.read_text(encoding="utf-8").splitlines():
+            c = ln.split("#")[0].strip()
+            if c in valid and done.get(c, "") != today.isoformat():
+                return c, "網站上的研究請求"
+
     q = ROOT / "analysis_queue.txt"
     if q.exists():
         queue = [c for c in (ln.split("#")[0].strip() for ln in q.read_text(encoding="utf-8").splitlines()) if c in valid]

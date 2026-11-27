@@ -193,6 +193,9 @@ body.zoomed { overflow: hidden; }
 a.star { display: inline-block; color: var(--text); font-size: 14px; }
 a.star:hover { text-decoration: none; border-color: var(--accent); }
 input.tg { width: 70px; padding: 3px 6px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel2); }
+.perf-strip { margin: 0 0 14px; }
+.perf-strip .kinfo { border: 0; margin: 6px 0 0; padding: 0; }
+.perf-strip .kinfo div { flex-direction: column; gap: 0; }
 .brief-card { display: flex; flex-direction: column; gap: 4px; color: var(--text); margin-bottom: 14px; border-left: 4px solid var(--accent); }
 .brief-card:hover { text-decoration: none; border-color: var(--accent); }
 .brief-card .title { font-weight: 600; font-size: 16px; }
