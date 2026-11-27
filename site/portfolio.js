@@ -347,6 +347,39 @@ function homePortfolioCard() {
   return `<div class="card stat"><div class="label">我的持股市值（${H.list.length} 檔）</div><div class="value">${fint(tot)}</div><div class="small">今日 ${signed(today, 0)}・未實現 ${signed(tot - cost, 0)} <a href="#/portfolio">→</a></div></div>`;
 }
 
+/* ============================================================ 盤前快報 */
+const SIGNAL = { "積極逢低承接": ["bull", 4], "小額分批佈局": ["bull", 3], "觀望暫緩投入": ["neutral", 2], "保守減碼避險": ["bear", 1] };
+const sigBadge = (s) => `<span class="badge ${(SIGNAL[s] || ["neutral"])[0]}" style="font-size:14px">${esc(s || "未提供")}</span>`;
+function homeBriefCard() {
+  const b = (S.briefs || [])[0];
+  if (!b) return "";
+  const today = new Date(Date.now() + 8 * 3600e3).toISOString().slice(0, 10);
+  return `<a class="card brief-card" href="#/brief/${b.date}">
+    <div class="rep-meta"><b>🌅 盤前快報</b><span class="num">${b.date}${b.date === today ? "（今天）" : ""}</span>${sigBadge(b.signal)}</div>
+    <div class="title">${esc(b.title)}</div><div class="muted small">${esc(b.summary)}</div></a>`;
+}
+function pageBriefs() {
+  const bs = S.briefs || [];
+  const hist = bs.slice(0, 30).reverse();
+  app.innerHTML = `<h1>盤前快報</h1><p class="sub">每個平日 08:20 自動產生：隔夜美股、利空預警、台股開盤風向、今晚預告、今日資金投入燈號。</p>
+    ${hist.length > 1 ? `<div class="card"><h3>近 30 天燈號</h3><div class="sig-strip">${hist.map((b) => `<a href="#/brief/${b.date}" class="sig s${(SIGNAL[b.signal] || [0, 0])[1]}" title="${b.date} ${esc(b.signal)}"><span>${b.date.slice(5)}</span></a>`).join("")}</div>
+      <div class="legend">${Object.keys(SIGNAL).map((k) => `<span><i class="sig s${SIGNAL[k][1]}" style="display:inline-block;width:12px;height:12px"></i>${k}</span>`).join("")}</div></div>` : ""}
+    <div class="grid cols-3" style="margin-top:14px">${bs.map((b) => `<a class="card rep-card" href="#/brief/${b.date}"><div class="rep-meta"><span class="num">${b.date}</span>${sigBadge(b.signal)}</div><div class="title">${esc(b.title)}</div><div class="muted small">${esc(b.summary)}</div></a>`).join("") || `<div class="card empty">還沒有快報，明天 08:20 會產生第一篇。</div>`}</div>`;
+}
+async function pageBrief(parts) {
+  const date = parts[1];
+  const bs = S.briefs || [], i = bs.findIndex((b) => b.date === date), b = bs[i];
+  if (!b) { app.innerHTML = `<div class="card empty">找不到 ${esc(date)} 的快報</div>`; return; }
+  const txt = await fetch(`briefs/${date}.md`).then((x) => x.text());
+  const html = DOMPurify.sanitize(marked.parse(txt.replace(/^﻿?---[\s\S]*?\n---\s*\n?/, "")));
+  const prev = bs[i + 1], next = bs[i - 1];
+  app.innerHTML = `<p class="small"><a href="#/briefs">← 盤前快報</a></p>
+    <div class="rep-meta"><span class="num">${b.date}</span>${sigBadge(b.signal)}</div><h1>${esc(b.title)}</h1><p class="sub">${esc(b.summary)}</p>
+    <article class="card md" id="md">${html}</article>
+    <div class="toolbar">${prev ? `<a class="btn sm" href="#/brief/${prev.date}">← ${prev.date}</a>` : "<span></span>"}${next ? `<a class="btn sm" href="#/brief/${next.date}">${next.date} →</a>` : ""}</div>`;
+  Charts.hydrate($("#md"));
+}
+
 /* ============================================================ 首頁提醒：持股停利停損、研究報告買賣區 */
 function homeAlerts() {
   const items = [];

@@ -16,7 +16,7 @@ on:
         default: false
   push:
     branches: [main]
-    paths: ["reports/**", "groups.json", "site/**", "scripts/build_site.py"]
+    paths: ["reports/**", "briefs/**", "groups.json", "site/**", "scripts/build_site.py"]
 
 permissions:
   contents: write

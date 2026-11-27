@@ -86,6 +86,23 @@ def build_reports(companies):
     return reports
 
 
+def build_briefs():
+    out_dir = SITE / "briefs"
+    if out_dir.exists():
+        shutil.rmtree(out_dir)
+    out_dir.mkdir(parents=True)
+    briefs = []
+    for p in sorted((ROOT / "briefs").glob("*.md")):
+        meta, body = parse_front_matter(p.read_text(encoding="utf-8"))
+        shutil.copy(p, out_dir / p.name)
+        briefs.append({"date": str(meta.get("date") or p.stem), "signal": meta.get("signal", ""),
+                       "title": meta.get("title", ""), "summary": meta.get("summary", ""),
+                       "text": md_to_text(body)[:4000]})
+    briefs.sort(key=lambda b: b["date"], reverse=True)
+    write_json(SITE / "data" / "briefs.json", briefs)
+    log("盤前快報", len(briefs), "篇")
+
+
 # ---------------------------------------------------------------- 股價 / 籌碼時間序列
 def load_series(codes):
     series: dict[str, dict[str, list]] = {c: {} for c in codes}
@@ -237,6 +254,7 @@ def main():
     companies = read_json(DATA / "companies.json", {})
     codes = sorted(companies)
     reports = build_reports(companies)
+    build_briefs()
     rep_by_code: dict[str, list] = {}
     for r in reports:
         rep_by_code.setdefault(r["code"], []).append(r)

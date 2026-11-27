@@ -75,6 +75,7 @@ async function boot() {
     S.rows.forEach((r) => (S.byCode[r.code] = r));
     S.reports = reports;
     S.groups = groups;
+    S.briefs = await getJSON("data/briefs.json").catch(() => []);
     $("#built").textContent = ` 資料更新：${meta.built}（最新交易日 ${meta.latest}）`;
   } catch (e) {
     app.innerHTML = `<div class="card empty">讀不到網站資料（${esc(e.message)}）。<br>請先執行 <code>python scripts/build_site.py</code>，並用本機伺服器開啟（不要直接雙擊 html）。</div>`;
@@ -92,7 +93,7 @@ function route() {
   const page = parts[0] || "home";
   $$("nav.main a").forEach((a) => a.classList.toggle("active", a.dataset.nav === (page === "report" ? "reports" : page === "stock" ? "" : page)));
   window.scrollTo(0, 0);
-  ({ home: pageHome, reports: pageReports, report: pageReport, screener: pageScreener, groups: pageGroups, stock: pageStock, portfolio: pagePortfolio, compare: pageCompare }[page] || pageHome)(parts, q);
+  ({ home: pageHome, reports: pageReports, report: pageReport, screener: pageScreener, groups: pageGroups, stock: pageStock, portfolio: pagePortfolio, compare: pageCompare, briefs: pageBriefs, brief: pageBrief }[page] || pageHome)(parts, q);
 }
 
 /* ------------------------------------------------------------ 全站搜尋 */
@@ -151,6 +152,7 @@ function pageHome() {
   app.innerHTML = `
     <h1>台股研究室</h1>
     <p class="sub">每日一家公司深度分析 ＋ 全市場 ${S.meta.stocks.toLocaleString()} 檔上市櫃股票資料。最新交易日 <b class="num">${esc(S.meta.latest)}</b>。</p>
+    ${homeBriefCard()}
     <div class="grid cols-4">
       ${homePortfolioCard()}
       <div class="card stat"><div class="label">上漲 / 下跌家數</div><div class="value"><span class="up">${up}</span> / <span class="down">${down}</span></div><span class="small muted">共 ${rows.length} 檔有成交</span></div>
