@@ -120,7 +120,15 @@ def write_json(path: Path, obj, compact: bool = True):
         txt = json.dumps(obj, ensure_ascii=False, separators=(",", ":"))
     else:
         txt = json.dumps(obj, ensure_ascii=False, indent=1)
-    path.write_text(txt, encoding="utf-8")
+    # Windows 上偶爾有防毒或同步軟體短暫鎖住檔案，重試幾次
+    for i in range(6):
+        try:
+            path.write_text(txt, encoding="utf-8")
+            return
+        except OSError:
+            if i == 5:
+                raise
+            time.sleep(2 * (i + 1))
 
 
 def log(*a):
