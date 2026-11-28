@@ -59,7 +59,7 @@ def build_reports(companies):
         meta, body = parse_front_matter(txt)
         code = str(meta.get("code", "")).strip()
         if not code:
-            m = re.search(r"(\d{4})", p.stem)
+            m = re.search(r"\d{4}-\d{2}-\d{2}-([0-9A-Z]{4,6})", p.stem)
             code = m.group(1) if m else ""
         date = str(meta.get("date", "")) or p.stem[:10]
         rid = p.stem
@@ -76,6 +76,7 @@ def build_reports(companies):
         reports.append({
             "buy": rng(meta.get("buy")), "sell": rng(meta.get("sell")),
             "id": rid, "code": code,
+            "kind": "etf" if str(meta.get("type", "")).strip() == "etf" or code.startswith("00") else "company",
             "name": meta.get("name") or companies.get(code, {}).get("n", ""),
             "date": date, "title": meta.get("title", rid), "rating": meta.get("rating", ""),
             "tags": tags, "summary": meta.get("summary", ""), "text": md_to_text(body)[:20000],

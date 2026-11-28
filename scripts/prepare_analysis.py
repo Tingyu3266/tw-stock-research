@@ -29,7 +29,7 @@ TZ = dt.timezone(dt.timedelta(hours=8))
 def last_report_dates() -> dict[str, str]:
     out: dict[str, str] = {}
     for p in (ROOT / "reports").glob("*.md"):
-        m = re.match(r"(\d{4}-\d{2}-\d{2})-(\d{4})", p.stem)
+        m = re.fullmatch(r"(\d{4}-\d{2}-\d{2})-([0-9A-Z]{4,6})", p.stem)
         if m:
             d, c = m.groups()
             out[c] = max(out.get(c, ""), d)
@@ -69,7 +69,7 @@ def pick(index: dict) -> tuple[str, str]:
 
     f = index["fields"]
     iv, ic = f.index("v"), f.index("code")
-    rows = sorted((r for r in index["rows"] if r[iv]), key=lambda r: r[iv], reverse=True)[:300]
+    rows = sorted((r for r in index["rows"] if r[iv] and not r[ic].startswith("00")), key=lambda r: r[iv], reverse=True)[:300]
     for r in rows:
         if r[ic] not in done:
             return r[ic], "成交量大且從未分析"

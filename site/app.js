@@ -162,8 +162,11 @@ function pageHome() {
       <div class="card stat"><div class="label">集保股權分散</div><div class="value">${esc(S.meta.tdcc || "–")}</div><a class="small" href="#/screener?sort=b1000w">大戶增持排行 →</a></div>
     </div>
     ${homeAlerts()}
-    <h2>最新分析報告 <a class="small" href="#/reports">全部 ${S.reports.length} 篇 →</a></h2>
-    <div class="grid cols-3">${S.reports.slice(0, 6).map((r) => repCard(r)).join("") || `<div class="card empty">還沒有報告。把 Claude 的分析存到 reports/ 資料夾即可。</div>`}</div>
+    ${(() => { const co = S.reports.filter((r) => r.kind !== "etf"), et = S.reports.filter((r) => r.kind === "etf"); return `
+    <h2>最新公司研究 <a class="small" href="#/reports">全部 ${co.length} 篇 →</a></h2>
+    <div class="grid cols-3">${co.slice(0, 6).map((r) => repCard(r)).join("") || `<div class="card empty">還沒有公司研究報告。</div>`}</div>
+    ${et.length ? `<h2>最新 ETF 研究 <a class="small" href="#/reports?kind=etf">全部 ${et.length} 篇 →</a></h2>
+    <div class="grid cols-3">${et.slice(0, 3).map((r) => repCard(r)).join("")}</div>` : ""}`; })()}
     <h2>產業熱力圖 <span class="muted small">（成交值加權平均漲跌，格子越大成交值越高；點進去看該產業個股）</span></h2>
     ${industryHeatmap()}
     <h2>今日市場焦點 <span class="muted small">（成交量 &gt; 500 張）</span></h2>
@@ -186,6 +189,8 @@ function pageReports(_, q) {
   const inds = [...new Set(S.reports.map((r) => S.byCode[r.code]?.ind).filter(Boolean))].sort();
   app.innerHTML = `
     <h1>分析報告</h1><p class="sub">支援全文關鍵字、評等、標籤、日期、產業、分組交叉篩選。</p>
+    <div class="tabs" id="r-kind">${[["company", "公司研究"], ["etf", "ETF 研究"]].map(([k, t]) =>
+      `<button data-kind="${k}">${t}（${S.reports.filter((r) => (r.kind === "etf") === (k === "etf")).length}）</button>`).join("")}</div>
     <div class="card">
       <div class="filters">
         <div class="field wide"><label>關鍵字（空白分隔＝同時包含）</label><input id="f-q" type="search" placeholder="例：AI 毛利率"></div>
@@ -199,6 +204,11 @@ function pageReports(_, q) {
     </div>
     <div class="toolbar"><span id="r-count" class="muted"></span><button class="btn sm" id="r-clear">清除條件</button></div>
     <div class="grid cols-3" id="r-list"></div>`;
+  let kind = q.get("kind") === "etf" ? "etf" : "company";
+  $$("#r-kind button").forEach((b) => {
+    b.classList.toggle("on", b.dataset.kind === kind);
+    b.addEventListener("click", () => { kind = b.dataset.kind; $$("#r-kind button").forEach((x) => x.classList.toggle("on", x === b)); apply(); });
+  });
   const ids = ["q", "rating", "ind", "group", "from", "to", "sort"];
   ids.forEach((k) => { const el = $(`#f-${k}`); el.value = q.get(k) || (k === "sort" ? "new" : ""); el.addEventListener("input", apply); });
   let selTags = new Set((q.get("tags") || "").split(",").filter(Boolean));
@@ -210,7 +220,7 @@ function pageReports(_, q) {
   function apply() {
     const v = Object.fromEntries(ids.map((k) => [k, $(`#f-${k}`).value.trim()]));
     const g = v.group && allGroups().find((x) => x.id === v.group);
-    let list = S.reports.filter((r) =>
+    let list = S.reports.filter((r) => (r.kind === "etf") === (kind === "etf") &&
       matchReport(r, v.q) && (!v.rating || r.rating === v.rating) && (!v.ind || S.byCode[r.code]?.ind === v.ind) &&
       (!g || g.codes.includes(r.code)) && (!v.from || r.date >= v.from) && (!v.to || r.date <= v.to) &&
       [...selTags].every((t) => r.tags.includes(t)));
@@ -221,6 +231,7 @@ function pageReports(_, q) {
     const nq = new URLSearchParams();
     ids.forEach((k) => v[k] && !(k === "sort" && v[k] === "new") && nq.set(k, v[k]));
     if (selTags.size) nq.set("tags", [...selTags].join(","));
+    if (kind === "etf") nq.set("kind", "etf");
     setQuery(nq);
   }
   apply();

@@ -29,7 +29,7 @@ def validate(text: str, target: str) -> list[str]:
     for k in REQUIRED:
         if not str(meta.get(k, "")).strip():
             errs.append(f"缺少欄位 {k}")
-    m = re.search(r"(\d{4}-\d{2}-\d{2})-(\d{4})", target)
+    m = re.search(r"(\d{4}-\d{2}-\d{2})-([0-9A-Z]{4,6})(?:\.md)?$", target)
     if m and str(meta.get("code", "")).strip() != m.group(2):
         errs.append(f"code 應為 {m.group(2)}，實際為 {meta.get('code')}")
     if meta.get("rating") not in ("看多", "中性", "看空"):
@@ -48,6 +48,21 @@ def validate(text: str, target: str) -> list[str]:
             errs.append(f"第 {i} 張圖缺少 source（資料來源）")
         if spec.get("type") in ("pie", "hbar") and len(spec.get("labels", [])) != len(spec.get("values", [])):
             errs.append(f"第 {i} 張圖 labels 與 values 數量不一致")
+    debates = re.findall(r"```debate\s*\n(.*?)\n```", body, re.S)
+    for i, block in enumerate(debates, 1):
+        try:
+            rounds = json.loads(block).get("rounds", [])
+        except (json.JSONDecodeError, AttributeError) as e:
+            errs.append(f"第 {i} 個 debate 區塊 JSON 格式錯誤：{e}")
+            continue
+        if not rounds or any(not str(r.get("topic", "")).strip() or not str(r.get("agree", "")).strip() for r in rounds):
+            errs.append(f"第 {i} 個 debate 區塊每一輪都要有 topic 與 agree（討論結果）")
+    if str(meta.get("type", "")).strip() == "etf":
+        if not debates:
+            errs.append("ETF 報告缺少 ```debate 討論結果區塊")
+        for h in ("## 成分股", "## 估值", "## 共識結論", "## 資料來源"):
+            if h not in body:
+                errs.append(f"ETF 報告缺少段落 {h}")
     return errs
 
 
@@ -62,8 +77,14 @@ def main():
             sys.exit(1)
         log("格式檢查通過", p)
         return
-    src = Path(sys.argv[1] if len(sys.argv) > 1 else ROOT / "work" / "analysis_output.md")
-    target = (ROOT / "work" / "analysis_target.txt").read_text(encoding="utf-8").strip()
+    args = sys.argv[1:]
+    tfile = ROOT / "work" / "analysis_target.txt"
+    if "--target" in args:  # ETF 排程：--target work/etf_target.txt
+        i = args.index("--target")
+        tfile = Path(args[i + 1])
+        args = args[:i] + args[i + 2:]
+    src = Path(args[0] if args else ROOT / "work" / "analysis_output.md")
+    target = tfile.read_text(encoding="utf-8").strip()
     text = src.read_text(encoding="utf-8").strip()
     text = re.sub(r"^```(?:markdown|md)?\s*\n(.*?)\n```\s*$", r"\1", text, flags=re.S)
     errs = validate(text, target)
