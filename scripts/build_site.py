@@ -182,6 +182,32 @@ def pctl(xs, p):
     return xs[lo] + (xs[hi] - xs[lo]) * (i - lo)
 
 
+def adjust_splits(k: list, etf: bool = False) -> list:
+    """股票分割／減資會讓價格在相鄰兩個交易日跳動超過漲跌幅限制（例如 0050 在 2025-06-18 一拆四），
+    依跳動比例還原之前的價格與成交量，避免 K 線、均線與報酬率出現假暴跌。"""
+    k = [r[:] for r in k]
+    for i in range(len(k) - 1, 0, -1):
+        prev, cur = k[i - 1][4], k[i][4]
+        if not prev or not cur:
+            continue
+        r = prev / cur
+        if 0.7 <= r <= 1.4:
+            continue
+        rr = max(r, 1 / r)
+        n = round(rr)
+        whole = n >= 2 and abs(rr - n) / n < 0.08  # 接近整數倍：分割或反分割
+        if not whole and etf:
+            continue  # 追蹤海外指數的 ETF 沒有漲跌幅限制，非整數倍的跳動可能是真實行情
+        f = (n if r > 1 else 1 / n) if whole else r
+        for row in k[:i]:
+            for j in (1, 2, 3, 4):
+                if row[j]:
+                    row[j] = round(row[j] / f, 4)
+            if row[5]:
+                row[5] = round(row[5] * f)
+    return k
+
+
 def price_band(k, val, eps_rows):
     """價位參考：本益比河流（近一年本益比的 20/50/80 百分位 × 近四季 EPS）＋技術面關鍵價位。"""
     closes = [x[4] for x in k]
@@ -341,6 +367,7 @@ def main():
         bf = read_json(DATA / "backfill" / f"{code}.json", {}) or {}
 
         k = [[d] + [r[IDX[f]] for f in ("o", "h", "l", "c", "v")] for d, r in zip(dates, rows) if r[IDX["c"]]]
+        k = adjust_splits(k, code.startswith("00"))
         chip = [[d] + [r[IDX[f]] for f in ("fi", "it", "dl", "mb", "ss")] for d, r in zip(dates, rows)
                 if any(r[IDX[f]] is not None for f in ("fi", "it", "dl", "mb"))]
         val_all = [[d, ser[d][IDX["pe"]], ser[d][IDX["dy"]], ser[d][IDX["pb"]]] for d in all_dates[-760:] if ser[d][IDX["pb"]] is not None]

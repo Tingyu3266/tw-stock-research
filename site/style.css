@@ -249,3 +249,23 @@ footer { text-align: center; color: var(--muted); font-size: 12.5px; padding: 24
   .stock-head .px { font-size: 26px; }
   h1 { font-size: 20px; }
 }
+
+/* ETF 辯論區塊 */
+.debate { margin: 14px 0; }
+.db-head { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+.db-who { flex: 1; padding: 8px 12px; border-radius: 10px; display: flex; flex-direction: column; gap: 2px; }
+.db-who span { font-size: 13px; opacity: .8; }
+.db-a.db-who, .db-say.db-a { background: color-mix(in srgb, var(--s1, #3b82f6) 12%, transparent); border-left: 3px solid var(--s1, #3b82f6); }
+.db-b.db-who, .db-say.db-b { background: color-mix(in srgb, var(--s2, #a855f7) 12%, transparent); border-left: 3px solid var(--s2, #a855f7); }
+.db-vs { font-weight: 700; opacity: .6; }
+.db-round { border: 1px solid var(--line, #8884); border-radius: 12px; padding: 12px; margin: 10px 0; }
+.db-topic { font-weight: 700; margin-bottom: 8px; display: flex; gap: 8px; align-items: center; }
+.db-n { display: inline-grid; place-items: center; width: 22px; height: 22px; border-radius: 50%; background: var(--text); color: var(--panel); font-size: 12px; flex: none; }
+.db-cols { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.db-say { padding: 10px 12px; border-radius: 8px; line-height: 1.65; font-size: 15px; }
+.db-tag { font-size: 12px; font-weight: 700; opacity: .75; margin-bottom: 4px; }
+.db-agree { margin-top: 10px; padding: 10px 12px; border-radius: 8px; background: color-mix(in srgb, var(--s3, #10b981) 12%, transparent); border-left: 3px solid var(--s3, #10b981); line-height: 1.65; }
+.db-agree b { display: block; font-size: 12px; margin-bottom: 4px; }
+@media (max-width: 640px) { .db-cols { grid-template-columns: 1fr; } }
+
+.md a { overflow-wrap: anywhere; word-break: break-word; }

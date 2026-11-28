@@ -130,7 +130,24 @@
   }
 
   /* 把文章內 <pre><code class="language-chart"> 換成圖表 */
+  /* 討論結果區塊：```debate {"rounds":[{"topic","agree"}]}；只顯示兩位投資人討論後的結果（a、b 各自觀點不顯示） */
+  function debate(o) {
+    return `<div class="debate">
+      ${(o.rounds || []).filter((r) => r.agree).map((r, i) => `<div class="db-round">
+        <div class="db-topic"><span class="db-n">${i + 1}</span>${esc(r.topic)}</div>
+        <div class="db-agree">${esc(String(r.agree).replace(/^共識：/, ""))}</div></div>`).join("")}
+    </div>`;
+  }
+
   function hydrate(root) {
+    root.querySelectorAll("pre > code.language-debate").forEach((code) => {
+      let html;
+      try { html = debate(JSON.parse(code.textContent)); }
+      catch (e) { html = `<div class="cl-err">辯論區塊格式錯誤：${esc(e.message)}</div>`; }
+      const div = document.createElement("div");
+      div.innerHTML = html;
+      code.parentElement.replaceWith(div.firstElementChild || div);
+    });
     root.querySelectorAll("pre > code.language-chart").forEach((code) => {
       let html;
       try { html = render(JSON.parse(code.textContent)); }
