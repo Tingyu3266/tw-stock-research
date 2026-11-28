@@ -417,9 +417,30 @@ async function pageBrief(parts) {
   const prev = bs[i + 1], next = bs[i - 1];
   app.innerHTML = `<p class="small"><a href="#/briefs">← 盤前快報</a></p>
     <div class="rep-meta"><span class="num">${b.date}</span>${sigBadge(b.signal)}</div><h1>${esc(b.title)}</h1><p class="sub">${esc(b.summary)}</p>
-    <article class="card md" id="md">${html}</article>
+    <nav class="brief-toc" id="brief-toc"></nav>
+    <article class="card md brief" id="md">${html}</article>
     <div class="toolbar">${prev ? `<a class="btn sm" href="#/brief/${prev.date}">← ${prev.date}</a>` : "<span></span>"}${next ? `<a class="btn sm" href="#/brief/${next.date}">${next.date} →</a>` : ""}</div>`;
+  briefEnhance($("#md"), b.signal);
   Charts.hydrate($("#md"));
+}
+/* 快報排版：燈號框上色、表格數字靠右與漲跌上色、段落目錄 */
+function briefEnhance(root, signal) {
+  const tone = (SIGNAL[signal] || ["neutral"])[0];
+  root.querySelectorAll("blockquote").forEach((q) => { if (q.textContent.includes("燈號")) q.classList.add("sig-box", tone); });
+  root.querySelectorAll("table").forEach((t) => {
+    t.querySelectorAll("tbody td:not(:first-child)").forEach((td) => {
+      const s = td.textContent.trim();
+      if (/^[+\-−▲▼]?\s*[\d,.]+/.test(s)) td.classList.add("n");
+      if (/^(\+|▲)\s*\d/.test(s)) td.classList.add("up");
+      else if (/^(-|−|▼)\s*\d/.test(s)) td.classList.add("down");
+    });
+  });
+  const heads = [...root.querySelectorAll("h2")];
+  const toc = $("#brief-toc");
+  if (toc && heads.length > 2) {
+    toc.innerHTML = heads.map((h, i) => `<button type="button" class="chip" data-i="${i}">${esc(h.textContent.replace(/^[一二三四五六七八九十]、/, "").replace(/（.*$/, "").replace(/^(.{4,}?)與.*$/, "$1").slice(0, 8))}</button>`).join("");
+    toc.onclick = (e) => { const i = e.target.dataset?.i; if (i != null) heads[i].scrollIntoView({ behavior: "smooth", block: "start" }); };
+  }
 }
 
 /* ============================================================ 首頁提醒：持股停利停損、研究報告買賣區 */

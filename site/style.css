@@ -269,3 +269,26 @@ footer { text-align: center; color: var(--muted); font-size: 12.5px; padding: 24
 @media (max-width: 640px) { .db-cols { grid-template-columns: 1fr; } }
 
 .md a { overflow-wrap: anywhere; word-break: break-word; }
+
+/* 盤前快報（五段式）：表格不水平捲動、數字靠右、燈號框依燈號上色 */
+.md.brief h2 { margin-top: 28px; scroll-margin-top: 70px; }
+.md.brief h3 { font-size: 15.5px; margin: 16px 0 6px; }
+.md.brief ul { padding-left: 1.2em; }
+.md.brief li { margin: 4px 0; }
+.md.brief table { display: table; width: 100%; border-collapse: collapse; font-size: 14.5px; margin: 10px 0; }
+.md.brief th, .md.brief td { padding: 6px 8px; border-bottom: 1px solid var(--line); overflow-wrap: anywhere; vertical-align: top; }
+.md.brief thead th { background: var(--panel2); font-size: 13px; color: var(--muted); }
+.md.brief td:first-child { font-weight: 600; white-space: nowrap; }
+.md.brief td.n { text-align: right; font-family: var(--mono); font-variant-numeric: tabular-nums; }
+.md.brief blockquote.sig-box { border-left-width: 5px; padding: 10px 14px; }
+.md.brief blockquote.sig-box.bull { border-left-color: var(--up); background: var(--up-soft); }
+.md.brief blockquote.sig-box.bear { border-left-color: var(--down); background: var(--down-soft); }
+.md.brief blockquote p { margin: 4px 0; }
+.brief-toc { display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0 12px; }
+.brief-toc .chip { border: 1px solid var(--line); background: var(--panel); color: var(--text); border-radius: 999px; padding: 4px 10px; font-size: 13px; cursor: pointer; }
+.brief-toc .chip:hover { border-color: var(--accent); }
+@media (max-width: 480px) {
+  .md.brief table { font-size: 13px; }
+  .md.brief th, .md.brief td { padding: 5px 5px; }
+  .md.brief td:first-child { white-space: normal; overflow-wrap: break-word; min-width: 3.2em; }
+}
