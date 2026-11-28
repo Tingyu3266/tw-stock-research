@@ -155,6 +155,23 @@ def build_eps(code, official_by_q, backfill_eps):
     for q, v in official_by_q.items():
         if v and v[0] is not None:
             cum[q] = v[0]
+    # 盈餘轉增資、減資、股票分割後，公司會用新股數重編當年累計 EPS，直接相減會得到錯誤的單季 EPS（例如 6669 2026Q3 變成 −62）。
+    # 判斷方式：同一年度內累計淨利增加、累計 EPS 卻下降，且「累計淨利 ÷ 累計 EPS」估出的股數增加超過 30%，
+    # 就把之前各季 EPS 換算成新股數的口徑（與 K 線還原一致）。淨利含非控制權益，所以只在這種明確情況才調整。
+    for q in sorted(official_by_q):
+        y, n = int(q[:4]), int(q[-1])
+        p = f"{y}Q{n - 1}"
+        a, b = official_by_q.get(p), official_by_q.get(q)
+        if n == 1 or not a or not b or None in (a[0], a[3], b[0], b[3]):
+            continue
+        if a[0] >= 0.3 and b[0] > 0 and b[3] > a[3] > 0 and b[0] < a[0]:
+            f = (a[3] / a[0]) / (b[3] / b[0])  # 舊股數 ÷ 新股數
+            if 0.05 < f < 0.77:
+                for x in [x for x in cum if x < q]:
+                    cum[x] = round(cum[x] * f, 2)
+                for x in [x for x in single if x < q]:
+                    if single[x] is not None:
+                        single[x] = round(single[x] * f, 2)
     for q in sorted(cum):
         y, n = int(q[:4]), int(q[-1])
         if n == 1:
