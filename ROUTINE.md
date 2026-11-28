@@ -30,7 +30,7 @@
 
 1. `git checkout main && git pull`
 2. `python3 scripts/build_site.py`
-3. 判斷是否為交易日：`ls data/daily | tail -1` 的日期若不是台灣今天（`TZ=Asia/Taipei date +%F`），代表休市或資料未到，**直接結束**，不寫報告、不 commit。
+3. 確認資料日期：`ls data/daily | tail -1`。若不是台灣今天（`TZ=Asia/Taipei date +%F`），可能是 GitHub 的 19:30 資料更新延遲，或今天休市。**照常寫報告**，使用最新一個交易日的資料，並在「數字怎麼看」註明「行情資料日期：YYYY-MM-DD」。公司研究不受一天行情落差影響，不要因此跳過。
 4. `python3 scripts/prepare_analysis.py`
    - 依 `analysis_queue.txt` 選出今天的公司，產生 `work/analysis_prompt.md`（內含官方數據資料包）與 `work/analysis_target.txt`（報告路徑）
    - 若報告路徑的檔案已存在，代表今天已做過，直接結束

@@ -239,7 +239,9 @@ function pageReport(parts) {
 async function renderAnalysis(el, code, d, rid) {
   const reps = S.reports.filter((x) => x.code === code);
   const r = reps.find((x) => x.id === rid) || reps[0];
-  const band = bandBox(d);
+  // 估值區塊（三把尺、同業、價值陷阱、下檔試算）；ETF、指數或資料不足時沿用原「價位參考」
+  const RV = window.Revamp ? await Revamp.build(code, d, S.rows, r).catch((e) => { console.warn(e); return null; }) : null;
+  const band = RV ? Revamp.valuationHTML(RV) : bandBox(d);
   if (!r) {
     el.innerHTML = `<div class="card empty">還沒有這家公司的分析。<br><span class="small">排程每個交易日 20:00 依研究清單寫一家；想優先研究，按上方「🔬 請 Claude 研究這檔」。</span></div>${band}`;
     return;

@@ -19,7 +19,7 @@ import shutil
 from common import DATA, ROOT, SITE, log, read_json, write_json
 from fetch_daily import DAILY_FIELDS, IDX
 
-KEEP_DAYS = 500  # 公司頁保留的交易日數
+KEEP_DAYS = 750  # 公司頁保留的交易日數（約 3 年，估值百分位最長用 750 日）
 
 
 # ---------------------------------------------------------------- 報告
